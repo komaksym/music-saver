@@ -44,6 +44,9 @@ function fakePlayer(opts) {
     checked: o.checked === undefined ? "false" : o.checked,
     likedBox: o.likedBox === undefined ? "true" : o.likedBox,
     menuOpen: false,
+    rowsDelayMs: o.rowsDelayMs || 0,
+    rowsReady: !(o.rowsDelayMs > 0),
+    otherClicked: false,
     playing: o.playing === undefined ? true : o.playing,
     positionMs: o.positionMs === undefined ? 1000 : o.positionMs,
     durationMs: o.durationMs === undefined ? 207000 : o.durationMs,
@@ -60,6 +63,11 @@ function fakePlayer(opts) {
       mainBtn.attrs["aria-checked"] = "true";
     } else {
       state.menuOpen = true;
+      if (state.rowsDelayMs > 0 && !state.rowsReady) {
+        setTimeout(() => {
+          state.rowsReady = true;
+        }, state.rowsDelayMs);
+      }
     }
   });
 
@@ -72,6 +80,10 @@ function fakePlayer(opts) {
     return null;
   };
 
+  const otherBox = button(o.otherChecked === undefined ? "false" : o.otherChecked, () => {
+    state.otherClicked = true;
+  });
+  otherBox.textContent = o.otherLabel === undefined ? "Upbeat Focus" : o.otherLabel;
   const labeled = node({ "aria-labelledby": "row", id: "listrow-title-spotify:collection:tracks" });
   labeled.closest = (sel) => (String(sel).includes("menuitemcheckbox") ? box : null);
 
@@ -89,8 +101,11 @@ function fakePlayer(opts) {
 
   const menu = {
     querySelector(sel) {
-      if (String(sel).includes("listrow-title-spotify")) return labeled;
-      if (String(sel).includes("menuitemcheckbox")) return box;
+      if (String(sel).includes("listrow-title-spotify")) return state.rowsReady && !o.noLikedRow ? labeled : null;
+      if (String(sel).includes("menuitemcheckbox")) {
+        if (!state.rowsReady) return null;
+        return o.noLikedRow ? otherBox : box;
+      }
       if (String(sel).includes('button[type="submit"]')) return o.noDone ? null : done;
       return null;
     },
@@ -278,5 +293,28 @@ test("menu save without Done fails instead of reporting saved", async () => {
   assert.deepEqual(out, { ok: false, reason: "dom-changed" });
   assert.equal(state.cancelClicked, true);
   assert.equal(state.doneClicked, false);
+});
+
+test("check waits for lazily loaded playlist rows", async () => {
+  const { doc } = fakePlayer({ checked: "true", likedBox: "false", rowsDelayMs: 40 });
+  const toggle = new LikeToggle(doc, { settleMs: 1, contentTimeoutMs: 2000, contentPollMs: 10 });
+  assert.equal(await toggle.check(), "unliked");
+});
+
+test("save waits for lazily loaded rows instead of failing", async () => {
+  const { doc, state } = fakePlayer({ checked: "true", likedBox: "false", rowsDelayMs: 40 });
+  const out = await new LikeToggle(doc, { settleMs: 1, contentTimeoutMs: 2000, contentPollMs: 10 }).save();
+  assert.deepEqual(out, { ok: true, action: "saved" });
+  assert.equal(state.likedBox, "true");
+});
+
+test("save without any Liked Songs row fails safe without touching other playlists", async () => {
+  const { doc, state } = fakePlayer({ checked: "true", noLikedRow: true });
+  const out = await new LikeToggle(doc, { settleMs: 1, contentTimeoutMs: 60, contentPollMs: 10 }).save();
+  assert.deepEqual(out, { ok: false, reason: "menu-timeout" });
+  assert.equal(state.otherClicked, false);
+  assert.equal(state.doneClicked, false);
+  const state2 = await new LikeToggle(doc, { settleMs: 1, contentTimeoutMs: 30, contentPollMs: 10 }).check();
+  assert.equal(state2, "unknown");
 });
 

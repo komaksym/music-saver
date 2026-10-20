@@ -304,6 +304,14 @@ function findMenu(root) {
   }
 }
 
+function rowLabel(node) {
+  try {
+    return node && node.textContent ? node.textContent.trim() : "";
+  } catch (e) {
+    return "";
+  }
+}
+
 function findLikedCheckbox(menu) {
   if (!menu) return null;
   let labeled = null;
@@ -316,11 +324,17 @@ function findLikedCheckbox(menu) {
     ? labeled.closest('button[role="menuitemcheckbox"]')
     : null;
   if (fromClosest) return fromClosest;
+  // Label-gated fallback: the labeled row is locale-proof, but when it is
+  // missing only a row that names Liked Songs may be touched. Never fall
+  // back to the first checkbox, which can belong to another playlist.
+  let boxes = [];
   try {
-    return menu.querySelector('button[role="menuitemcheckbox"]');
+    const list = menu.querySelectorAll('button[role="menuitemcheckbox"]');
+    boxes = list ? Array.from(list) : [];
   } catch (e) {
-    return null;
+    boxes = [];
   }
+  return boxes.find((b) => rowLabel(b).toLowerCase().includes("liked songs")) || null;
 }
 
 function findDone(menu) {
@@ -351,6 +365,8 @@ class LikeToggle {
   constructor(root, opts) {
     this.root = root;
     this.settleMs = (opts && opts.settleMs) || 150;
+    this.contentTimeoutMs = (opts && opts.contentTimeoutMs) || 2500;
+    this.contentPollMs = (opts && opts.contentPollMs) || 100;
   }
 
   sleep(ms) {
@@ -378,11 +394,24 @@ class LikeToggle {
     return findMenu(this.root);
   }
 
+  // Spotify fetches the playlist rows after the menu shell opens, so the
+  // Liked Songs row is awaited with a bounded poll instead of assumed
+  // present after one settle sleep.
+  async waitForLiked(menu) {
+    const started = Date.now();
+    for (;;) {
+      const box = findLikedCheckbox(menu);
+      if (box) return box;
+      if (Date.now() - started >= this.contentTimeoutMs) return null;
+      await this.sleep(this.contentPollMs);
+    }
+  }
+
   async check() {
     if (readLikeHint(this.root) === "unliked") return "unliked";
     const menu = await this.openMenu();
     if (!menu) return "unknown";
-    const box = findLikedCheckbox(menu);
+    const box = await this.waitForLiked(menu);
     const state = !box
       ? "unknown"
       : attrOf(box, "aria-checked") === "true"
@@ -411,7 +440,7 @@ class LikeToggle {
     }
     const menu = await this.openMenu();
     if (!menu) return { ok: false, reason: "menu-timeout" };
-    const box = findLikedCheckbox(menu);
+    const box = await this.waitForLiked(menu);
     if (!box) {
       clickCancel(menu);
       return { ok: false, reason: "menu-timeout" };
@@ -457,7 +486,7 @@ class LikeToggle {
         ? { ok: true, action: "removed" }
         : { ok: false, reason: "confirm-mismatch" };
     }
-    const box = findLikedCheckbox(menu);
+    const box = await this.waitForLiked(menu);
     if (!box) {
       clickCancel(menu);
       return { ok: false, reason: "menu-timeout" };
