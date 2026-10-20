@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>music-saver options</title>
-<style>body{font:14px system-ui,sans-serif;max-width:32em;margin:2em}label{display:block;margin:1em 0}</style>
+<style>body{font:14px system-ui,sans-serif;max-width:36em;margin:2em}label{display:block;margin:1em 0}ul{padding-left:1.2em}li{margin:.3em 0}.kind{display:inline-block;min-width:3.2em;font-weight:600}</style>
 </head>
 <body>
 <h1>music-saver</h1>
@@ -11,6 +11,11 @@
 <label>Save after listening (%) <input type="number" id="threshold" min="1" max="100" step="1"></label>
 <label>Minimum listened seconds <input type="number" id="floor" min="0" step="1"></label>
 <p id="status" role="status"></p>
+<h2>Recent activity</h2>
+<ul id="activity-log"><li>Unavailable outside the installed extension.</li></ul>
+<h2>Retry queue</h2>
+<ul id="retry-queue"><li>Unavailable outside the installed extension.</li></ul>
 <script type="module" src="./options.js"></script>
 </body>
 </html>
+
