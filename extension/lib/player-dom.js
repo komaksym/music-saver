@@ -66,20 +66,23 @@ export function extractTrackId(candidate) {
   return null;
 }
 
-function findTrackAnchor(doc) {
+function findTrackAnchor(doc, widget) {
   const selectors = [
     SELECTORS.trackAnchor,
     'a[href*="spotify:track:"]',
     'a[href*="spotify%3Atrack%3A"]',
   ];
-  for (const selector of selectors) {
-    let node = null;
-    try {
-      node = doc.querySelector(selector);
-    } catch (e) {
-      continue;
+  const roots = widget ? [widget, doc] : [doc];
+  for (const root of roots) {
+    for (const selector of selectors) {
+      let node = null;
+      try {
+        node = root.querySelector(selector);
+      } catch (e) {
+        continue;
+      }
+      if (node) return node;
     }
-    if (node) return node;
   }
   return null;
 }
@@ -103,7 +106,7 @@ export function readTrack(doc) {
   } catch (e) {
     linkHref = "";
   }
-  const anchor = findTrackAnchor(doc);
+  const anchor = findTrackAnchor(doc, widget);
   const anchorUris = anchor
     ? [attrOf(anchor, "href"), attrOf(anchor, "data-uri"), attrOf(anchor, "data-context-uri")]
     : [];
@@ -338,9 +341,13 @@ export class LikeToggle {
       return { ok: false, reason: "dom-changed" };
     }
     await this.sleep(this.settleMs);
+    const done = findDone(menu);
+    if (!done || !done.click) {
+      clickCancel(menu);
+      return { ok: false, reason: "dom-changed" };
+    }
     try {
-      const done = findDone(menu);
-      if (done && done.click) done.click();
+      done.click();
     } catch (e) {
       return { ok: false, reason: "dom-changed" };
     }
@@ -380,9 +387,13 @@ export class LikeToggle {
       return { ok: false, reason: "dom-changed" };
     }
     await this.sleep(this.settleMs);
+    const done = findDone(menu);
+    if (!done || !done.click) {
+      clickCancel(menu);
+      return { ok: false, reason: "dom-changed" };
+    }
     try {
-      const done = findDone(menu);
-      if (done && done.click) done.click();
+      done.click();
     } catch (e) {
       return { ok: false, reason: "dom-changed" };
     }

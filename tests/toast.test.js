@@ -25,7 +25,11 @@ function makeEl() {
     children: [],
     textContent: "",
     removed: false,
-    setAttribute() {},
+    attrs: {},
+    style: {},
+    setAttribute(k, v) {
+      this.attrs[k] = v;
+    },
     appendChild(c) {
       this.children.push(c);
       return c;
@@ -71,6 +75,9 @@ test("show renders the toast and Undo fires exactly once", () => {
   assert.equal(root.appended, el);
   assert.equal(btn.textContent, "Undo");
   assert.equal(btn.attrs["data-testid"], "music-saver-undo");
+  assert.equal(el.attrs["role"], "status");
+  assert.ok(String(el.style.cssText).includes("position:fixed"));
+  assert.ok(String(el.style.cssText).includes("z-index:2147483647"));
   assert.ok(el.textContent.includes("Immune to Danger"));
   btn.click();
   btn.click();

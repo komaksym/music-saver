@@ -91,7 +91,7 @@ function fakePlayer(opts) {
     querySelector(sel) {
       if (String(sel).includes("listrow-title-spotify")) return labeled;
       if (String(sel).includes("menuitemcheckbox")) return box;
-      if (String(sel).includes('button[type="submit"]')) return done;
+      if (String(sel).includes('button[type="submit"]')) return o.noDone ? null : done;
       return null;
     },
     querySelectorAll(sel) {
@@ -104,6 +104,7 @@ function fakePlayer(opts) {
   const artistNode = node({}, state.artist);
   const linkNode = node({ href: state.albumHref });
   const anchorNode = node({ href: state.anchorHref });
+  const widgetAnchor = o.widgetAnchorHref ? node({ href: o.widgetAnchorHref }) : null;
   const playBtn = node({ "aria-label": state.playing ? "Pause" : "Play" });
   const range = { value: String(state.positionMs), max: String(state.durationMs) };
   const bar = { querySelector: () => range };
@@ -112,6 +113,7 @@ function fakePlayer(opts) {
 
   const widget = {
     querySelector(sel) {
+      if (String(sel).includes("context-link") || String(sel).includes("spotify:track") || String(sel).includes("spotify%3A")) return widgetAnchor;
       if (String(sel).includes("info-title")) return titleNode;
       if (String(sel).includes("info-artist")) return artistNode;
       if (String(sel).includes("item-link")) return linkNode;
@@ -260,5 +262,21 @@ test("remove clears Liked Songs membership and is idempotent", async () => {
   assert.equal(ctx.state.likedBox, "false");
   const plain = fakePlayer({ checked: "false" });
   assert.deepEqual(await new LikeToggle(plain.doc, { settleMs: 1 }).remove(), { ok: true, action: "removed" });
+});
+
+test("the widget anchor wins over document-level anchors", () => {
+  const { doc } = fakePlayer({
+    anchorHref: "https://open.spotify.com/x?uri=spotify:track:docTrack111",
+    widgetAnchorHref: "https://open.spotify.com/y?uri=spotify:track:widgetTrack222",
+  });
+  assert.equal(readTrack(doc).id, "widgetTrack222");
+});
+
+test("menu save without Done fails instead of reporting saved", async () => {
+  const { doc, state } = fakePlayer({ checked: "true", likedBox: "false", noDone: true });
+  const out = await new LikeToggle(doc, { settleMs: 1 }).save();
+  assert.deepEqual(out, { ok: false, reason: "dom-changed" });
+  assert.equal(state.cancelClicked, true);
+  assert.equal(state.doneClicked, false);
 });
 

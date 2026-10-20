@@ -28,6 +28,7 @@ export class WatchLoop {
     this.timer = null;
     this.busy = false;
     this.lastPolledId = null;
+    this.lastRetryPollMs = 0;
   }
 
   static create(opts) {
@@ -65,6 +66,10 @@ export class WatchLoop {
     if (!sample || !sample.track || !(sample.durationMs > 0)) return null;
     if (sample.track.id !== this.lastPolledId) {
       this.lastPolledId = sample.track.id;
+      this.lastRetryPollMs = now;
+      await this.pollRetries(sample.track, now);
+    } else if (now - this.lastRetryPollMs > 30000) {
+      this.lastRetryPollMs = now;
       await this.pollRetries(sample.track, now);
     }
     const delta = this.sampler.observe(sample);
@@ -119,6 +124,16 @@ export class WatchLoop {
 
   async undo(track) {
     const now = this.nowMs();
+    let current = null;
+    try {
+      current = this.read(now);
+    } catch (e) {
+      current = null;
+    }
+    const currentId = current && current.track ? current.track.id : null;
+    if (currentId !== track.id) {
+      return this.fail(track, now, "remove", "track-changed");
+    }
     let out = null;
     try {
       out = await this.likes.remove();
@@ -224,6 +239,22 @@ function liveBoot() {
       .then((raw) => {
         const loop = WatchLoop.create({ doc: document, sendMessage, settings: raw || {} });
         loop.start();
+        try {
+          const storageChanged = chrome.storage && chrome.storage.onChanged;
+          if (storageChanged && storageChanged.addListener) {
+            storageChanged.addListener((changes, area) => {
+              if (area === "local" && changes && changes.settings) {
+                try {
+                  loop.applySettings(changes.settings.newValue);
+                } catch (e) {
+                  // Settings apply is best-effort at the edge.
+                }
+              }
+            });
+          }
+        } catch (e) {
+          // Live-reload is best-effort.
+        }
       });
   } catch (e) {
     // Never break the host page.

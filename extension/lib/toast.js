@@ -36,6 +36,21 @@ export class UndoToast {
     } catch (e) {
       // Attribute failure still leaves a usable notice.
     }
+    try {
+      el.setAttribute("role", "status");
+    } catch (e) {
+      // Usable without the hook.
+    }
+    try {
+      if (el.style) {
+        el.style.cssText =
+          "position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
+          "background:#191414;color:#fff;padding:10px 14px;border-radius:8px;" +
+          "font:14px system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4);";
+      }
+    } catch (e) {
+      // An unstyled toast still carries the Undo action.
+    }
     const text = (track ? track.title + " - " + track.artist : "Track") + " saved to Liked Songs";
     if ("textContent" in el) {
       el.textContent = text + " ";

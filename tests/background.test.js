@@ -90,3 +90,13 @@ test("malformed events are rejected without touching the log", async () => {
   assert.deepEqual(read.recent, []);
 });
 
+test("ms-read lists queued items even while they back off", async () => {
+  const chrome = stubChrome();
+  await boot({ chrome });
+  await chrome.send({ type: "ms-event", event: { ...saveEvent("n1", "track-d"), kind: "fail", detail: "save:x" } });
+  await chrome.send({ type: "ms-ack", id: "track-d", ok: false, nowMs: 2000 });
+  assert.deepEqual((await chrome.send({ type: "ms-due", nowMs: 2500 })).due, []);
+  const read = await chrome.send({ type: "ms-read", limit: 10, nowMs: 2500 });
+  assert.deepEqual(read.pending.map((i) => i.id), ["track-d"]);
+});
+

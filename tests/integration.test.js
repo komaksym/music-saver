@@ -235,3 +235,60 @@ test("a failed save records fail, backs off, and manual retry clears it", async 
   assert.deepEqual((await chrome.send({ type: "ms-due", nowMs: 600000 })).due, []);
 });
 
+test("Undo after a track switch fails safe and queues the removal", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  const { loop, events } = wire(doc, chrome);
+  await listenThrough(loop, doc, 190000);
+  assert.deepEqual(events.map((e) => e.kind), ["save"]);
+  await loop.undo({ id: "ghost", uri: "spotify:track:ghost", title: "Ghost", artist: "Nobody" });
+  await flush();
+  assert.deepEqual(events.map((e) => e.kind), ["save", "fail"]);
+  assert.equal(events[1].detail, "remove:track-changed");
+  assert.equal(doc.state.checked, "true");
+  const pending = await chrome.send({ type: "ms-due", nowMs: 500000 });
+  assert.deepEqual(pending.due.map((i) => [i.id, i.kind]), [["ghost", "remove"]]);
+});
+
+test("manual retry executes while the same track keeps playing", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  let saveCalls = 0;
+  const { loop, events } = wire(doc, chrome, {
+    likes: {
+      check: async () => "unliked",
+      save: async () => (++saveCalls === 1 ? { ok: false, reason: "dom-changed" } : { ok: true, action: "saved" }),
+      remove: async () => ({ ok: true, action: "removed" }),
+    },
+  });
+  await listenThrough(loop, doc, 190000);
+  assert.deepEqual(events.map((e) => e.kind), ["fail"]);
+  assert.equal(saveCalls, 1);
+  await chrome.send({ type: "ms-retry-now", id: "abc123", nowMs: clock.now });
+  for (let t = 200000; t <= 240000; t += 10000) {
+    clock.now = t;
+    doc.state.positionMs = t;
+    await loop.tick();
+  }
+  await flush();
+  assert.equal(saveCalls, 2);
+  assert.deepEqual(events.map((e) => e.kind), ["fail"]);
+  assert.deepEqual((await chrome.send({ type: "ms-due", nowMs: 600000 })).due, []);
+});
+
+test("disabling settings stops the loop from saving", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  const { loop, events } = wire(doc, chrome);
+  loop.applySettings({ thresholdRatio: 0.9, minSoundedMs: 60000, enabled: false });
+  await listenThrough(loop, doc, 190000);
+  assert.deepEqual(events, []);
+  assert.equal(doc.state.checked, "false");
+});
+

@@ -83,9 +83,8 @@ export async function route(state, msg) {
     return { ok: await state.queue.retryNow(msg.id, msg.nowMs !== undefined ? msg.nowMs : Date.now()) };
   }
   if (msg.type === "ms-read") {
-    const now = msg.nowMs !== undefined ? msg.nowMs : Date.now();
     const recent = await state.log.recent(msg.limit || 50);
-    const pending = await state.queue.due(now);
+    const pending = await state.queue.all();
     return { settings: state.settings, recent, pending };
   }
   return null;

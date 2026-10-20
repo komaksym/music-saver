@@ -152,20 +152,23 @@ function extractTrackId(candidate) {
   return null;
 }
 
-function findTrackAnchor(doc) {
+function findTrackAnchor(doc, widget) {
   const selectors = [
     SELECTORS.trackAnchor,
     'a[href*="spotify:track:"]',
     'a[href*="spotify%3Atrack%3A"]',
   ];
-  for (const selector of selectors) {
-    let node = null;
-    try {
-      node = doc.querySelector(selector);
-    } catch (e) {
-      continue;
+  const roots = widget ? [widget, doc] : [doc];
+  for (const root of roots) {
+    for (const selector of selectors) {
+      let node = null;
+      try {
+        node = root.querySelector(selector);
+      } catch (e) {
+        continue;
+      }
+      if (node) return node;
     }
-    if (node) return node;
   }
   return null;
 }
@@ -189,7 +192,7 @@ function readTrack(doc) {
   } catch (e) {
     linkHref = "";
   }
-  const anchor = findTrackAnchor(doc);
+  const anchor = findTrackAnchor(doc, widget);
   const anchorUris = anchor
     ? [attrOf(anchor, "href"), attrOf(anchor, "data-uri"), attrOf(anchor, "data-context-uri")]
     : [];
@@ -424,9 +427,13 @@ class LikeToggle {
       return { ok: false, reason: "dom-changed" };
     }
     await this.sleep(this.settleMs);
+    const done = findDone(menu);
+    if (!done || !done.click) {
+      clickCancel(menu);
+      return { ok: false, reason: "dom-changed" };
+    }
     try {
-      const done = findDone(menu);
-      if (done && done.click) done.click();
+      done.click();
     } catch (e) {
       return { ok: false, reason: "dom-changed" };
     }
@@ -466,9 +473,13 @@ class LikeToggle {
       return { ok: false, reason: "dom-changed" };
     }
     await this.sleep(this.settleMs);
+    const done = findDone(menu);
+    if (!done || !done.click) {
+      clickCancel(menu);
+      return { ok: false, reason: "dom-changed" };
+    }
     try {
-      const done = findDone(menu);
-      if (done && done.click) done.click();
+      done.click();
     } catch (e) {
       return { ok: false, reason: "dom-changed" };
     }
@@ -517,6 +528,21 @@ class UndoToast {
       el.setAttribute("data-testid", "music-saver-toast");
     } catch (e) {
       // Attribute failure still leaves a usable notice.
+    }
+    try {
+      el.setAttribute("role", "status");
+    } catch (e) {
+      // Usable without the hook.
+    }
+    try {
+      if (el.style) {
+        el.style.cssText =
+          "position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
+          "background:#191414;color:#fff;padding:10px 14px;border-radius:8px;" +
+          "font:14px system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4);";
+      }
+    } catch (e) {
+      // An unstyled toast still carries the Undo action.
     }
     const text = (track ? track.title + " - " + track.artist : "Track") + " saved to Liked Songs";
     if ("textContent" in el) {
@@ -593,6 +619,7 @@ class WatchLoop {
     this.timer = null;
     this.busy = false;
     this.lastPolledId = null;
+    this.lastRetryPollMs = 0;
   }
 
   static create(opts) {
@@ -630,6 +657,10 @@ class WatchLoop {
     if (!sample || !sample.track || !(sample.durationMs > 0)) return null;
     if (sample.track.id !== this.lastPolledId) {
       this.lastPolledId = sample.track.id;
+      this.lastRetryPollMs = now;
+      await this.pollRetries(sample.track, now);
+    } else if (now - this.lastRetryPollMs > 30000) {
+      this.lastRetryPollMs = now;
       await this.pollRetries(sample.track, now);
     }
     const delta = this.sampler.observe(sample);
@@ -684,6 +715,16 @@ class WatchLoop {
 
   async undo(track) {
     const now = this.nowMs();
+    let current = null;
+    try {
+      current = this.read(now);
+    } catch (e) {
+      current = null;
+    }
+    const currentId = current && current.track ? current.track.id : null;
+    if (currentId !== track.id) {
+      return this.fail(track, now, "remove", "track-changed");
+    }
     let out = null;
     try {
       out = await this.likes.remove();
@@ -789,6 +830,22 @@ function liveBoot() {
       .then((raw) => {
         const loop = WatchLoop.create({ doc: document, sendMessage, settings: raw || {} });
         loop.start();
+        try {
+          const storageChanged = chrome.storage && chrome.storage.onChanged;
+          if (storageChanged && storageChanged.addListener) {
+            storageChanged.addListener((changes, area) => {
+              if (area === "local" && changes && changes.settings) {
+                try {
+                  loop.applySettings(changes.settings.newValue);
+                } catch (e) {
+                  // Settings apply is best-effort at the edge.
+                }
+              }
+            });
+          }
+        } catch (e) {
+          // Live-reload is best-effort.
+        }
       });
   } catch (e) {
     // Never break the host page.
