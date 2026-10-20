@@ -46,6 +46,11 @@ export class RetryQueue {
     return this.items.filter((i) => i.nextDueMs <= nowMs).sort((a, b) => a.seq - b.seq);
   }
 
+  async all() {
+    await this.ensureLoaded();
+    return [...this.items].sort((a, b) => a.seq - b.seq);
+  }
+
   async markFailed(id, nowMs) {
     await this.ensureLoaded();
     const item = this.items.find((i) => i.id === id);
@@ -74,3 +79,4 @@ export class RetryQueue {
     return true;
   }
 }
+
