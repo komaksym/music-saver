@@ -2,36 +2,35 @@
 
 ## Summary
 
-Spotify-first Chromium extension that auto-saves tracks the user listens through while working. Round 1 design is locked: Liked Songs destination, Spotify Web API saves, sounded-time 90 percent plus 60s floor once per track ID, auto-save with Undo toast and local log, check-then-skip already-saved tracks. Round 2 is locked except Q11 (Premium): auth is PKCE login with no token copying, retry queue with backoff plus manual retry, settings carry threshold 90 plus floor 60s plus enable-disable, scope is Spotify web only, repo is public.
+Spotify-first Chromium extension that auto-saves tracks the user listens through while working. Design is fully locked: Liked Songs destination, sounded-time 90 percent plus 60s floor once per track ID, auto-save with Undo toast and local log, check-then-skip already-saved tracks, retry queue with backoff plus manual retry, settings with threshold 90 plus floor 60s plus enable-disable, Spotify web scope, public repo. Q11 answered NO Premium, so v1 drives the web player through a content script (ADR-0003) and the tested API client stays parked for a post-Premium future.
 
 ## Milestones
 
 ### M0 Repo and docs (done)
 
-- Public repo with scaffold, glossary, ADR-0001, ADR-0002, and API inventory.
-- History: , , , , , plus auth docs commit.
+- Public repo with scaffold, glossary, ADR-0001 (superseded), ADR-0002 (parked), ADR-0003, and API inventory.
 
-### M1 Spotify app and OAuth (open: Q11 only)
+### M1 Player DOM mapping (needs the user present)
 
-- Dedicated developer app, Authorization code with PKCE via .
-- Scopes: , , plus  only if detection polls the API.
-- Prerequisite: owning account holds active Premium (Q11). Prove with a real login plus token against the account.
+- Against the live logged-in `open.spotify.com` in Brave: locate the track identity, the Like state readout, and the Like toggle control.
+- Login-walled, so it runs in a coordinated session with the user present. Output is a written control map, not code.
+- Proves the DOM path exists before M2 code starts.
 
-### M2 Now-playing detection (locked: Spotify web)
+### M2 Content-script watcher
 
-- Scope  in Chromium including Brave.
-- Either API polling or content-script watcher; decision rides with the M1 redirect findings.
-- Output is a track identity (Spotify track ID) stream for M3.
+- Watches the mapped controls on `open.spotify.com`, emits track identity plus Like state, feeds sounded time into the eligibility engine.
+- No API scopes, no tokens, existing Brave login only.
 
 ### M3 Eligibility engine (done: rule plus tests)
 
 - Sounded-time 90 percent plus 60s floor, pauses excluded, seeks do not inflate credit, once per track ID.
-- Implemented in , 8 tests green in .
+- Implemented in `src/eligibility.js`, 8 tests green in `tests/eligibility.test.js`.
 
-### M4 Save, check, undo (locked: retry queue)
+### M4 Save, check, undo through the player (locked: retry queue)
 
-- Generic endpoints only: save , remove , generic contains-check, all with Spotify URIs. Deprecated per-type routes are out.
-- Failed saves queue locally with backoff, surface in the log, manual retry included.
+- Like-state read before acting (skip when already Liked), Like click to save, toggle again to undo.
+- Failed actions queue locally with backoff, surface in the log, manual retry included.
+- `src/spotify.js` (8 tests green) stays parked for post-Premium API use.
 
 ### M5 Settings page (locked)
 
@@ -44,9 +43,9 @@ Spotify-first Chromium extension that auto-saves tracks the user listens through
 
 ### M7 Real-browser E2E and sync (locked: public repo)
 
-- End-to-end pass on  in Brave with logged-in session: listen, eligibility fires, Liked Songs gains the track, Undo removes it.
-- Push milestones, open PR under branch rulesets now available on the public repo.
+- End-to-end pass on `open.spotify.com` in Brave with logged-in session: listen, eligibility fires, Liked Songs gains the track, Undo reverses it.
+- Push milestones, open PR under branch rulesets on the public repo.
 
 ## Open questions
 
-- Q11 Premium. All other questions Q1-Q10 are answered; see thread.
+- None. All questions Q1-Q11 answered; any new fork gets a new ADR.

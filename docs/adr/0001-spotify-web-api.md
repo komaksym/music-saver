@@ -1,7 +1,7 @@
 # 0001 Use Spotify Web API for saves
 
 Date: 2026-10-21
-Status: accepted
+Status: superseded by ADR-0003 (owning account has no Premium)
 
 ## Context
 Round 1 Q2 offered a DOM Like-click with no setup versus the Spotify Web API with app setup and token handling.
