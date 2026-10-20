@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>music-saver options</title>
+<style>body{font:14px system-ui,sans-serif;max-width:32em;margin:2em}label{display:block;margin:1em 0}</style>
+</head>
+<body>
+<h1>music-saver</h1>
+<label>Enabled <input type="checkbox" id="enabled"></label>
+<label>Save after listening (%) <input type="number" id="threshold" min="1" max="100" step="1"></label>
+<label>Minimum listened seconds <input type="number" id="floor" min="0" step="1"></label>
+<p id="status" role="status"></p>
+<script type="module" src="./options.js"></script>
+</body>
+</html>
