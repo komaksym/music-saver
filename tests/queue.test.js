@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { RetryQueue } from "../src/queue.js";
+import { RetryQueue } from "../extension/lib/queue.js";
 
 const BASE = 1_000;
 const CAP = 8_000;

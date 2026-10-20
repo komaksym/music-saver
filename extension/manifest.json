@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "music-saver",
+  "version": "0.1.0",
+  "description": "Auto-saves Spotify tracks you listen through.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://open.spotify.com/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+}

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createLibraryClient, AuthError, RateLimitError, TransientError } from "../src/spotify.js";
+import { createLibraryClient, AuthError, RateLimitError, TransientError } from "../extension/lib/spotify.js";
 
 const URI = "spotify:track:4iV5W9uYEdYUVa79Axb7Rh";
 

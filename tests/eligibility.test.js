@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { EligibilityTracker } from "../src/eligibility.js";
+import { EligibilityTracker } from "../extension/lib/eligibility.js";
 
 const MIN = 60_000;
 const TRACK_3MIN = 180_000; // 90 percent = 162s, above the 60s floor
