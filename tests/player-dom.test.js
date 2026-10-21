@@ -7,7 +7,6 @@ import {
   readLikeHint,
   extractTrackId,
   parseTimeToMs,
-  slugify,
   SoundedTimeSampler,
   LikeToggle,
 } from "../extension/lib/player-dom.js";
@@ -119,7 +118,7 @@ function fakePlayer(opts) {
   const titleNode = node({}, state.title);
   const artistNode = node({}, state.artist);
   const linkNode = node({ href: state.albumHref });
-  const anchorNode = node({ href: state.anchorHref });
+  const anchorNode = node({ href: state.anchorHref }, o.anchorText === undefined ? state.title : o.anchorText);
   const widgetAnchor = o.widgetAnchorHref ? node({ href: o.widgetAnchorHref }) : null;
   const playBtn = node({ "aria-label": state.playing ? "Pause" : "Play" });
   const range = { value: String(state.positionMs), max: String(state.durationMs) };
@@ -208,11 +207,14 @@ test("ad-like segments never credit time, queue work, or crash", async () => {
 
   const sampler = new SoundedTimeSampler();
   const track = { id: "t" };
-  assert.equal(sampler.observe({ kind: "track", track, playing: true, positionMs: 0, wallMs: 0 }), 0);
-  assert.equal(sampler.observe({ kind: "track", track, playing: true, positionMs: 1000, wallMs: 1000 }), 1000);
+  assert.equal(sampler.observe({ kind: "track", track, playing: true, positionMs: 0, durationMs: 200000, wallMs: 0 }), 0);
+  assert.equal(sampler.observe({ kind: "track", track, playing: true, positionMs: 1000, durationMs: 200000, wallMs: 1000 }), 1000);
   assert.equal(sampler.observe(ad), 0);
   assert.equal(sampler.observe({ ...ad, wallMs: 2000 }), 0);
-  assert.equal(sampler.observe({ kind: "track", track, playing: true, positionMs: 2000, wallMs: 3000 }), 0);
+  assert.equal(sampler.observe({ kind: "track", track, playing: true, positionMs: 2000, durationMs: 200000, wallMs: 3000 }), 0);
+
+  const { doc: staleDoc } = fakePlayer({ title: "Advertisement", anchorHref: "https://open.spotify.com/track/stale?uri=spotify:track:stale", anchorText: "Immune to Danger" });
+  assert.equal(readPlayback(staleDoc, 0).kind, "ad");
 
   const { doc: unidentifiedDoc } = fakePlayer({ anchorHref: null });
   const messages = [];
@@ -242,36 +244,35 @@ test("readLikeHint reports unliked fast path and unknown otherwise", () => {
   assert.equal(readLikeHint({ querySelector: () => null }), "unknown");
 });
 
-test("helpers parse ids, times, and slugs", () => {
+test("helpers parse ids and times", () => {
   assert.equal(extractTrackId("spotify:track:abc123"), "abc123");
   assert.equal(extractTrackId("x?uri=spotify%3Atrack%3Axyz"), "xyz");
   assert.equal(extractTrackId(null), null);
   assert.equal(parseTimeToMs("3:27"), 207000);
   assert.ok(Number.isNaN(parseTimeToMs("nope")));
-  assert.equal(slugify("/album/x::A B::C"), "album-x-a-b-c");
 });
 
 test("sampler credits sounded deltas bounded by wall time", () => {
   const s = new SoundedTimeSampler();
   const track = { id: "t" };
-  assert.equal(s.observe({ track, playing: true, positionMs: 1000, wallMs: 0 }), 0);
-  assert.equal(s.observe({ track, playing: true, positionMs: 2500, wallMs: 1000 }), 1000);
+  assert.equal(s.observe({ kind: "track", track, playing: true, positionMs: 1000, durationMs: 200000, wallMs: 0 }), 0);
+  assert.equal(s.observe({ kind: "track", track, playing: true, positionMs: 2500, durationMs: 200000, wallMs: 1000 }), 1000);
 });
 
 test("sampler ignores pauses and seeks", () => {
   const s = new SoundedTimeSampler();
   const track = { id: "t" };
-  s.observe({ track, playing: true, positionMs: 5000, wallMs: 0 });
-  assert.equal(s.observe({ track, playing: false, positionMs: 5000, wallMs: 30000 }), 0);
-  s.observe({ track, playing: true, positionMs: 5000, wallMs: 31000 });
-  assert.equal(s.observe({ track, playing: true, positionMs: 60000, wallMs: 32000 }), 1000);
-  assert.equal(s.observe({ track, playing: true, positionMs: 1000, wallMs: 33000 }), 0);
+  s.observe({ kind: "track", track, playing: true, positionMs: 5000, durationMs: 200000, wallMs: 0 });
+  assert.equal(s.observe({ kind: "track", track, playing: false, positionMs: 5000, durationMs: 200000, wallMs: 30000 }), 0);
+  s.observe({ kind: "track", track, playing: true, positionMs: 5000, durationMs: 200000, wallMs: 31000 });
+  assert.equal(s.observe({ kind: "track", track, playing: true, positionMs: 60000, durationMs: 200000, wallMs: 32000 }), 1000);
+  assert.equal(s.observe({ kind: "track", track, playing: true, positionMs: 1000, durationMs: 200000, wallMs: 33000 }), 0);
 });
 
 test("sampler resets on track switch and unreadable samples", () => {
   const s = new SoundedTimeSampler();
-  s.observe({ track: { id: "a" }, playing: true, positionMs: 9000, wallMs: 0 });
-  assert.equal(s.observe({ track: { id: "b" }, playing: true, positionMs: 9000, wallMs: 1000 }), 0);
+  s.observe({ kind: "track", track: { id: "a" }, playing: true, positionMs: 9000, durationMs: 200000, wallMs: 0 });
+  assert.equal(s.observe({ kind: "track", track: { id: "b" }, playing: true, positionMs: 9000, durationMs: 200000, wallMs: 1000 }), 0);
   assert.equal(s.observe(null), 0);
 });
 
