@@ -61,8 +61,13 @@ export class WatchLoop {
     try {
       sample = this.read(now);
     } catch (e) {
+      this.sampler.reset();
       return null;
     }
+    // Observe every sample, including ads and unreadable states. A non-track
+    // sample resets the sampler, so ad time never bridges a later seek or a
+    // resumed track into a credit.
+    const delta = this.sampler.observe(sample);
     if (!sample || !sample.track || !(sample.durationMs > 0)) return null;
     if (sample.track.id !== this.lastPolledId) {
       this.lastPolledId = sample.track.id;
@@ -72,7 +77,6 @@ export class WatchLoop {
       this.lastRetryPollMs = now;
       await this.pollRetries(sample.track, now);
     }
-    const delta = this.sampler.observe(sample);
     if (!(delta > 0)) return null;
     let eligible = false;
     try {

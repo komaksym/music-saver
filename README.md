@@ -5,7 +5,7 @@ Chromium extension that auto-saves Spotify tracks you listen through while you w
 ## How it works
 
 - Watches the Spotify web player (`open.spotify.com`) through a content script and reuses the existing login. No app setup, no OAuth, no tokens.
-- A listen counts when sounded time reaches 90% of the track with at least 60 seconds sounded, once per track ID. Pauses are excluded and seeks never inflate credit.
+- A listen counts when sounded time reaches 90% of the track with at least 60 seconds sounded, once per track ID. Pauses, seeks, and ad segments never add credit.
 - On the eligible transition the extension reads Like state first and skips tracks already in Liked Songs. Otherwise it saves through the player Like control.
 - Every save shows an Undo toast and is recorded in a local activity log (saves, skips, undos, failures). Failed actions retry with backoff and can be retried manually from the options page.
 - Settings: enable/disable, threshold percent (default 90), minimum seconds (default 60).

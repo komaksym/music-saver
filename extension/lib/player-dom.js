@@ -13,6 +13,8 @@ export const SELECTORS = Object.freeze({
   positionText: '[data-testid="playback-position"]',
   durationText: '[data-testid="playback-duration"]',
   nowPlayingView: 'aside[aria-label="Now playing view"]',
+  adBar: '[data-testadtype]',
+  adWidget: '[data-testid="now-playing-widget-v2"]',
   menu: '[data-testid="context-menu"]',
   likedRow: '[aria-labelledby="listrow-title-spotify:collection:tracks"]',
 });
@@ -103,6 +105,7 @@ function findTrackAnchor(doc, widget, title) {
 }
 
 export function readTrack(doc) {
+  if (readAdType(doc)) return null;
   let widget = null;
   try {
     widget = doc.querySelector(SELECTORS.widget);
@@ -192,12 +195,37 @@ function findPlayButton(doc) {
   }
 }
 
+// The now-playing bar carries data-testadtype="ad-type-none" for a track and
+// "ad-type-ad" while an ad plays. The ad bar swap also renders the v2 widget.
+// Use either signal so a stale track anchor can never resurrect an ad segment.
+export function readAdType(doc) {
+  let bar = null;
+  try {
+    bar = doc.querySelector(SELECTORS.adBar);
+  } catch (e) {
+    bar = null;
+  }
+  if (bar) {
+    const value = attrOf(bar, "data-testadtype");
+    if (value) return value === "ad-type-none" ? null : value;
+  }
+  try {
+    if (doc.querySelector(SELECTORS.adWidget)) return "ad";
+  } catch (e) {
+    return null;
+  }
+  return null;
+}
+
 // A playback sample is either a track with a stable ID and positive duration,
 // or an ad with no track identity or timing. Ads reset the sampler, so they
 // never add to a track's sounded-time budget.
 export function readPlayback(doc, wallMs) {
   const playBtn = findPlayButton(doc);
   const playing = attrOf(playBtn, "aria-label") === "Pause";
+  if (readAdType(doc)) {
+    return { kind: "ad", track: null, playing, wallMs, positionMs: 0, durationMs: 0 };
+  }
   const track = readTrack(doc);
   const times = readTimes(doc);
   if (track && times && findLikeControl(doc)) {
@@ -216,24 +244,45 @@ export function readLikeHint(doc) {
 export class SoundedTimeSampler {
   constructor() {
     this.prev = null;
+    this.anchor = null;
   }
 
   reset() {
     this.prev = null;
+    this.anchor = null;
   }
 
   observe(sample) {
     if (!sample || sample.kind !== "track" || !sample.track || !sample.track.id || !(sample.durationMs > 0)) {
-      this.prev = null;
+      this.reset();
       return 0;
     }
     const prev = this.prev;
     this.prev = sample;
-    if (!prev || !prev.track || prev.track.id !== sample.track.id) return 0;
-    if (!prev.playing || !sample.playing) return 0;
-    const wall = sample.wallMs - prev.wallMs;
-    const progress = sample.positionMs - prev.positionMs;
-    if (!(wall > 0) || !(progress > 0)) return 0;
+    if (!prev || !prev.track || prev.track.id !== sample.track.id) {
+      this.anchor = sample;
+      return 0;
+    }
+    if (!prev.playing || !sample.playing) {
+      this.anchor = sample.playing ? sample : null;
+      return 0;
+    }
+    const anchor = this.anchor;
+    if (!anchor) {
+      this.anchor = sample;
+      return 0;
+    }
+    const progress = sample.positionMs - anchor.positionMs;
+    if (!(progress > 0)) {
+      // The live progress bar advances in five-second steps while the watcher
+      // polls every second. Keep the last changed position so the next step
+      // credits the whole span. A backward seek starts a new anchor.
+      if (progress < 0) this.anchor = sample;
+      return 0;
+    }
+    const wall = sample.wallMs - anchor.wallMs;
+    this.anchor = sample;
+    if (!(wall > 0)) return 0;
     return Math.min(progress, wall);
   }
 }
@@ -458,4 +507,3 @@ export class LikeToggle {
     return { ok: true, action: "removed" };
   }
 }
-
