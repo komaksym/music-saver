@@ -1,0 +1,9 @@
+{
+  "skill": "baoyu-infographic",
+  "backend": "image_gen",
+  "image_sha256": "ec152f65acfea8c6c40abf10c4cd7ee8feff0e3032b6822665a32e00345c6bb0",
+  "prompt_sha256": "5a581d65734adb516dd45ce089ae91b563f27810c37e4f8331eb16b120df3243",
+  "purpose": "Summarizes the shipped Spotify saver MVP described in the PR 3 readme update.",
+  "visual_note": "Three flat panels labeled LISTEN, SAVE and UNDO on a teal background with a headphone listener and Liked Songs motif.",
+  "created_at": "2026-10-21T09:30:45Z"
+}

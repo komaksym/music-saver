@@ -1,0 +1,9 @@
+{
+  "skill": "baoyu-infographic",
+  "backend": "image_gen",
+  "image_sha256": "ef072ecf2b010ead8c2eb694915b9e2c0632b9a0ad57c5c4b34df74c6f7f30a1",
+  "prompt_sha256": "722bbed88c604752703ce6fd6470189e20659ac25e83ad62067c40d98914572e",
+  "purpose": "Explains the ported PR ready gate with six body sections and CI checks for this PR.",
+  "visual_note": "Title PR READY GATE; left column sections Problem, Evidence, Changes, Validation, Visual, Risks; right CI PIPELINE with ready and scope-watch check badges feeding a green MERGE gate.",
+  "created_at": "2026-10-21T09:30:45Z"
+}
