@@ -175,6 +175,15 @@ function hasPlayer(doc) {
   return false;
 }
 
+function findLikeControl(doc) {
+  try {
+    return doc.querySelector(SELECTORS.widget + " button[aria-checked]")
+      || doc.querySelector("button[aria-checked]");
+  } catch (e) {
+    return null;
+  }
+}
+
 function findPlayButton(doc) {
   try {
     return doc.querySelector(SELECTORS.playPause);
@@ -191,7 +200,7 @@ export function readPlayback(doc, wallMs) {
   const playing = attrOf(playBtn, "aria-label") === "Pause";
   const track = readTrack(doc);
   const times = readTimes(doc);
-  if (track && times) {
+  if (track && times && findLikeControl(doc)) {
     return { kind: "track", track, playing, wallMs, positionMs: times.positionMs, durationMs: times.durationMs };
   }
   if (!hasPlayer(doc)) return null;
@@ -199,13 +208,7 @@ export function readPlayback(doc, wallMs) {
 }
 
 export function readLikeHint(doc) {
-  let btn = null;
-  try {
-    btn = doc.querySelector(SELECTORS.widget + " button[aria-checked]")
-      || doc.querySelector("button[aria-checked]");
-  } catch (e) {
-    return "unknown";
-  }
+  const btn = findLikeControl(doc);
   if (!btn) return "unknown";
   return attrOf(btn, "aria-checked") === "false" ? "unliked" : "unknown";
 }
