@@ -1,0 +1,9 @@
+reviews:
+  request_changes_workflow: true
+  allow_author_approval: false
+  pre_merge_checks:
+    title:
+      mode: error
+      requirements: "Use Conventional Commits: type(scope): summary."
+    description:
+      mode: error
