@@ -16,10 +16,14 @@ jobs:
         with:
           fetch-depth: 0
       - name: Fetch base
-        run: git fetch origin ${{ github.base_ref }}
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch origin "$BASE_REF"
       - name: Lint commit messages
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          base="origin/${{ github.base_ref }}"
+          base="origin/$BASE_REF"
           fail=0
           for sha in $(git log --format=%H --no-merges "$base..HEAD"); do
             subj=$(git log --format=%s -1 "$sha")
