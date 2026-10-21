@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Roll up required check contexts for a PR head into the ready verdict.
-# Passes only when every required context is green; polls while they run.
+# Roll up required workflow check contexts for a PR head into the ready verdict.
+# CodeRabbit is a ruleset-enforced commit status and stays out of this rollup because
+# its review can land after the job budget. Passes when every listed context is green.
 # A failed context waits until the timeout so a rerun can still turn it green.
 # Usage: check-ready-rollup.sh HEAD_SHA [REPO] [TIMEOUT_SECONDS]
 set -euo pipefail
@@ -8,7 +9,7 @@ set -euo pipefail
 HEAD_SHA="${1:?usage: check-ready-rollup.sh HEAD_SHA [REPO] [TIMEOUT_SECONDS]}"
 REPO="${2:-komaksym/music-saver}"
 TIMEOUT="${3:-720}"
-REQUIRED="ci pr-title pr-hygiene commit-lint CodeRabbit"
+REQUIRED="ci pr-title pr-hygiene commit-lint"
 
 deadline=$((SECONDS + TIMEOUT))
 while true; do
@@ -33,7 +34,7 @@ while true; do
     esac
   done
   if [ "${#failed[@]}" -eq 0 ] && [ "${#pending[@]}" -eq 0 ]; then
-    echo "ready: all required contexts green ($REQUIRED)"
+    echo "ready: all listed workflow contexts green ($REQUIRED)"
     exit 0
   fi
   if [ "$SECONDS" -ge "$deadline" ]; then
