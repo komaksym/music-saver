@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { WatchLoop } from "../extension/content.js";
 import {
   readTrack,
   readPlayback,
@@ -172,13 +173,9 @@ test("readTrack resolves identity from the real track anchor", () => {
   });
 });
 
-test("readTrack falls back to a deterministic slug uri without an anchor", () => {
+test("readTrack refuses an ad-like segment without a track anchor", () => {
   const { doc } = fakePlayer({ anchorHref: null });
-  const track = readTrack(doc);
-  assert.ok(track.uri.startsWith("spotify:track:slug-"));
-  assert.equal(track.title, "Immune to Danger");
-  const again = readTrack(fakePlayer({ anchorHref: null }).doc);
-  assert.equal(track.uri, again.uri);
+  assert.equal(readTrack(doc), null);
 });
 
 test("readTrack returns null when the widget or names are missing", () => {
@@ -189,6 +186,7 @@ test("readTrack returns null when the widget or names are missing", () => {
 test("readPlayback reports playing state and millisecond range values", () => {
   const { doc } = fakePlayer({ positionMs: 61000, durationMs: 207000 });
   const sample = readPlayback(doc, 5000);
+  assert.equal(sample.kind, "track");
   assert.equal(sample.playing, true);
   assert.equal(sample.positionMs, 61000);
   assert.equal(sample.durationMs, 207000);
@@ -198,8 +196,44 @@ test("readPlayback reports playing state and millisecond range values", () => {
 test("readPlayback falls back to MM:SS text without a range input", () => {
   const { doc } = fakePlayer({ useRange: false });
   const sample = readPlayback(doc, 0);
+  assert.equal(sample.kind, "track");
   assert.equal(sample.positionMs, 1000);
   assert.equal(sample.durationMs, 207000);
+});
+
+test("ad-like segments never credit time, queue work, or crash", async () => {
+  const { doc } = fakePlayer({ title: "Advertisement", artist: "Spotify", anchorHref: null, durationMs: 0, durText: "0:00" });
+  const ad = readPlayback(doc, 0);
+  assert.deepEqual(ad, { kind: "ad", track: null, playing: true, wallMs: 0, positionMs: 0, durationMs: 0 });
+
+  const sampler = new SoundedTimeSampler();
+  const track = { id: "t" };
+  assert.equal(sampler.observe({ kind: "track", track, playing: true, positionMs: 0, wallMs: 0 }), 0);
+  assert.equal(sampler.observe({ kind: "track", track, playing: true, positionMs: 1000, wallMs: 1000 }), 1000);
+  assert.equal(sampler.observe(ad), 0);
+  assert.equal(sampler.observe({ ...ad, wallMs: 2000 }), 0);
+  assert.equal(sampler.observe({ kind: "track", track, playing: true, positionMs: 2000, wallMs: 3000 }), 0);
+
+  const { doc: unidentifiedDoc } = fakePlayer({ anchorHref: null });
+  const messages = [];
+  const loop = WatchLoop.create({
+    doc: unidentifiedDoc,
+    settings: {},
+    sendMessage: async (message) => {
+      messages.push(message);
+      return null;
+    },
+    nowMs: () => 0,
+  });
+  assert.equal(await loop.tick(), null);
+  assert.deepEqual(messages, []);
+
+  const brokenDoc = {
+    querySelector() {
+      throw new Error("player DOM changed");
+    },
+  };
+  assert.equal(readPlayback(brokenDoc, 0), null);
 });
 
 test("readLikeHint reports unliked fast path and unknown otherwise", () => {
