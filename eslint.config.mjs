@@ -31,8 +31,17 @@ export default [
     },
     rules: {
       "no-unused-vars": ["error", { caughtErrors: "none" }],
-      // The DOM boundary starts bindings at an empty value before a
-      // try/catch that may return from catch.
+    },
+  },
+  {
+    files: [
+      "extension/content.js",
+      "extension/lib/player-dom.js",
+      "extension/lib/toast.js",
+    ],
+    rules: {
+      // These files start bindings at an empty value before a try/catch
+      // that may return from catch.
       "no-useless-assignment": "off",
     },
   },
