@@ -1,0 +1,11 @@
+{
+  "skill": "baoyu-infographic",
+  "backend": "agent-drawn",
+  "source": "infographic.html",
+  "step1_note": "codex-image_gen rendered bytes but isolate has no persist path; fallback drawn from prompts/01-infographic.md",
+  "image_sha256": "7c894319548c30bc59abeab69496ee43bea64fa56058aa9df8986e2d6901714e",
+  "prompt_sha256": "90fa40303ad8a9b139ddbe00bd372832c3c7cac9163ab397bcaca37efe2216de",
+  "purpose": "This schematic shows the sounded-time budget fix that makes Spotify auto-save work in background tabs, verified live muted.",
+  "visual_note": "Viewed infographic.png: title Sounded-Time Budget Fix with BEFORE per-tick clip panel showing 5:1 undercount and AFTER playing-time budget panel showing 1:1 tracking plus live-verified footer.",
+  "created_at": "2026-10-21T12:35:55Z"
+}
