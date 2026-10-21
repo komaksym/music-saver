@@ -1,26 +1,12 @@
-## Summary
+## What changes
 
-<!-- What changed and why. Keep to 5-15 lines. Include a diagram or file tree for structural changes. -->
+<!-- One-minute briefing. Name the real files, jobs, and commands. Plain words. No SHAs, no metric tables, no invented jargon. -->
 
-<!-- Example tree (indented): -->
-<!--     extension/ -->
-<!--       background.js  # ledger routes -->
-<!--       content.bundle.js  # generated watcher -->
+## How to verify
 
-## Evidence
+<!-- Commands you ran and what you saw. Point at the live check or image. -->
 
-<!-- Before-after proof for the exact artifact. Prefer a real-browser screenshot or video. -->
+## Risk
 
-<!-- - Before: <describe or link> -->
-<!-- - After: <describe or link> -->
-<!-- - Evidence image (raw URL, update branch/path as needed): -->
-<!--   https://raw.githubusercontent.com/komaksym/music-saver/main/docs/evidence/e2e-proof.png -->
-
-## Merge Danger
-
-<!-- One-way door? Blast radius? Rollback plan. -->
-
-<!-- - One-way door: yes/no + reason -->
-<!-- - Blast radius: <what breaks if this is wrong> -->
-<!-- - Rollback: <how to revert> -->
+<!-- What can break and how you undo it. -->
 
