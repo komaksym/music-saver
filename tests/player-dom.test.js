@@ -55,6 +55,7 @@ function fakePlayer(opts) {
     durText: o.durText || "3:27",
     doneClicked: false,
     cancelClicked: false,
+    noLike: !!o.noLike,
   };
 
   const mainBtn = button(state.checked, () => {
@@ -132,7 +133,7 @@ function fakePlayer(opts) {
       if (String(sel).includes("info-title")) return titleNode;
       if (String(sel).includes("info-artist")) return artistNode;
       if (String(sel).includes("item-link")) return linkNode;
-      if (String(sel).includes("button")) return mainBtn;
+      if (String(sel).includes("button")) return state.noLike ? null : mainBtn;
       return null;
     },
   };
@@ -141,7 +142,7 @@ function fakePlayer(opts) {
     querySelector(sel) {
       const s = String(sel);
       if (s.includes("context-menu")) return state.menuOpen ? menu : null;
-      if (s.includes("now-playing-widget") && s.includes("button")) return mainBtn;
+      if (s.includes("now-playing-widget") && s.includes("button")) return state.noLike ? null : mainBtn;
       if (s.includes("now-playing-widget")) return widget;
       if (s.includes("control-button-playpause")) return playBtn;
       if (s.includes("playback-progressbar") && s.includes("input")) return state.useRange ? range : null;
@@ -154,7 +155,7 @@ function fakePlayer(opts) {
       if (s.includes("item-link")) return linkNode;
       if (s.includes("info-title")) return titleNode;
       if (s.includes("info-artist")) return artistNode;
-      if (s.includes("button[aria-checked]")) return mainBtn;
+      if (s.includes("button[aria-checked]")) return state.noLike ? null : mainBtn;
       return null;
     },
   };
@@ -215,6 +216,9 @@ test("ad-like segments never credit time, queue work, or crash", async () => {
 
   const { doc: staleDoc } = fakePlayer({ title: "Advertisement", anchorHref: "https://open.spotify.com/track/stale?uri=spotify:track:stale", anchorText: "Immune to Danger" });
   assert.equal(readPlayback(staleDoc, 0).kind, "ad");
+
+  const { doc: noLikeDoc } = fakePlayer({ noLike: true, positionMs: 5000, durationMs: 200000 });
+  assert.equal(readPlayback(noLikeDoc, 0).kind, "ad");
 
   const { doc: unidentifiedDoc } = fakePlayer({ anchorHref: null });
   const messages = [];
