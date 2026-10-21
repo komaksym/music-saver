@@ -18,6 +18,7 @@ Chromium extension that auto-saves Spotify tracks you listen through while you w
 
 ## Develop
 
+- `npm install` installs the lint tooling, and `npm run lint` checks the extension sources and scripts.
 - `npm test` runs the unit and integration suites.
 - `npm run build` regenerates `extension/content.bundle.js` (do not edit by hand).
 - `npm run verify` runs tests, build, and syntax checks.
