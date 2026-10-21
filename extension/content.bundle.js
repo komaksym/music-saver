@@ -274,10 +274,18 @@ function readLikeHint(doc) {
 class SoundedTimeSampler {
   constructor() {
     this.prev = null;
+    // Playing-side wall clock and credited total implement the sounded-time
+    // budget: progress credits against accumulated playing time, not against
+    // a single tick gap. Spotify refreshes the progress bar in multi-second
+    // steps in background tabs, so per-tick clipping structurally undercounts.
+    this.playingWallMs = 0;
+    this.creditedMs = 0;
   }
 
   reset() {
     this.prev = null;
+    this.playingWallMs = 0;
+    this.creditedMs = 0;
   }
 
   observe(sample) {
@@ -287,12 +295,21 @@ class SoundedTimeSampler {
     }
     const prev = this.prev;
     this.prev = sample;
-    if (!prev || !prev.track || prev.track.id !== sample.track.id) return 0;
+    if (!prev || !prev.track || prev.track.id !== sample.track.id) {
+      this.playingWallMs = 0;
+      this.creditedMs = 0;
+      return 0;
+    }
     if (!prev.playing || !sample.playing) return 0;
     const wall = sample.wallMs - prev.wallMs;
+    if (!(wall > 0)) return 0;
+    this.playingWallMs += wall;
     const progress = sample.positionMs - prev.positionMs;
-    if (!(wall > 0) || !(progress > 0)) return 0;
-    return Math.min(progress, wall);
+    if (!(progress > 0)) return 0;
+    const delta = Math.min(progress, Math.max(0, this.playingWallMs - this.creditedMs));
+    if (!(delta > 0)) return 0;
+    this.creditedMs += delta;
+    return delta;
   }
 }
 
