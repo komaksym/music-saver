@@ -1,12 +1,18 @@
-## What changes
+## Problem
+<!-- What breaks or is missing from the user's perspective. One paragraph. -->
 
-<!-- One-minute briefing. Name the real files, jobs, and commands. Plain words. No SHAs, no metric tables, no invented jargon. -->
+## Evidence
+<!-- Proof: commands, log lines, trace verdicts. Link runs, never paste secrets. -->
 
-## How to verify
+## Changes
+<!-- One line per file or area. No code dumps. -->
 
-<!-- Commands you ran and what you saw. Point at the live check or image. -->
+## Validation
+<!-- Commands run plus results. Full suite result required. -->
 
-## Risk
+## Visual
+<!-- One infographic per PR, generated with the baoyu-infographic skill. Small follow-up fixes reuse it. A commit that drastically changes direction earns a fresh infographic posted as a PR comment, never replacing this one. Link raw file bytes: a blob URL with ?raw=true, or a raw.githubusercontent.com URL. Bare blob URLs render as broken images. -->
+![PR infographic](paste-image-url-here)
 
-<!-- What can break and how you undo it. -->
-
+## Risks
+<!-- Rollout concerns, limits, follow-ups. Write None when there are none. -->
