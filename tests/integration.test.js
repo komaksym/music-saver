@@ -43,6 +43,7 @@ function fakeDoc(opts) {
     durationMs: o.durationMs || 200000,
     doneClicked: false,
     cancelClicked: false,
+    ad: false,
   };
   const mainBtn = node({ "aria-checked": state.checked });
   mainBtn.click = () => {
@@ -107,13 +108,19 @@ function fakeDoc(opts) {
     },
   };
   const bar = { querySelector: () => range };
+  const adBar = {
+    getAttribute: (name) => (name === "data-testadtype" ? (state.ad ? "ad-type-ad" : "ad-type-none") : null),
+  };
+  const adWidget = node({ "aria-label": "Advertisement" });
   return {
     state,
     querySelector(sel) {
       const s = String(sel);
+      if (s.includes("data-testadtype")) return adBar;
+      if (s.includes("now-playing-widget-v2")) return state.ad ? adWidget : null;
       if (s.includes("context-menu")) return state.menuOpen ? menu : null;
       if (s.includes("now-playing-widget") && s.includes("button")) return mainBtn;
-      if (s.includes("now-playing-widget")) return widget;
+      if (s.includes("now-playing-widget")) return state.ad ? null : widget;
       if (s.includes("control-button-playpause")) return playBtn;
       if (s.includes("playback-progressbar")) return s.includes("input") ? range : bar;
       if (s.includes("context-link") || s.includes("spotify:track")) return anchor;
@@ -290,5 +297,48 @@ test("disabling settings stops the loop from saving", async () => {
   await listenThrough(loop, doc, 190000);
   assert.deepEqual(events, []);
   assert.equal(doc.state.checked, "false");
+});
+
+test("an ad break resets the sampler and a post-ad seek earns no credit", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  const { loop, events } = wire(doc, chrome);
+
+  doc.state.positionMs = 100000;
+  await loop.tick();
+
+  doc.state.ad = true;
+  doc.state.positionMs = 100000;
+  clock.now = 1000;
+  await loop.tick();
+
+  doc.state.ad = false;
+  doc.state.positionMs = 200000;
+  clock.now = 35000;
+  await loop.tick();
+  assert.equal(loop.tracker.soundedMs, 0);
+
+  doc.state.positionMs = 201000;
+  clock.now = 36000;
+  await loop.tick();
+  assert.equal(loop.tracker.soundedMs, 1000);
+  assert.deepEqual(events, []);
+});
+
+test("a full listen saves on time when the live progress bar updates every five seconds", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  const { loop, events } = wire(doc, chrome);
+  for (let t = 0; t <= 185000; t += 1000) {
+    clock.now = t;
+    doc.state.positionMs = Math.floor(t / 5000) * 5000;
+    await loop.tick();
+  }
+  assert.deepEqual(events.map((e) => e.kind), ["save"]);
+  assert.equal(doc.state.checked, "true");
 });
 

@@ -12,6 +12,9 @@ export const SELECTORS = Object.freeze({
   progressBar: '[data-testid="playback-progressbar"]',
   positionText: '[data-testid="playback-position"]',
   durationText: '[data-testid="playback-duration"]',
+  nowPlayingView: 'aside[aria-label="Now playing view"]',
+  adBar: '[data-testadtype]',
+  adWidget: '[data-testid="now-playing-widget-v2"]',
   menu: '[data-testid="context-menu"]',
   likedRow: '[aria-labelledby="listrow-title-spotify:collection:tracks"]',
 });
@@ -32,14 +35,6 @@ function attrOf(node, name) {
   } catch (e) {
     return null;
   }
-}
-
-export function slugify(value) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
 }
 
 export function parseTimeToMs(value) {
@@ -66,13 +61,26 @@ export function extractTrackId(candidate) {
   return null;
 }
 
-function findTrackAnchor(doc, widget) {
+function matchesTitle(anchor, title) {
+  const label = rowLabel(anchor).toLowerCase();
+  const expected = String(title || "").trim().toLowerCase();
+  if (!label) return true;
+  return !!expected && (label.includes(expected) || expected.includes(label));
+}
+
+function findTrackAnchor(doc, widget, title) {
   const selectors = [
     SELECTORS.trackAnchor,
     'a[href*="spotify:track:"]',
     'a[href*="spotify%3Atrack%3A"]',
   ];
-  const roots = widget ? [widget, doc] : [doc];
+  let view = null;
+  try {
+    view = doc.querySelector(SELECTORS.nowPlayingView);
+  } catch (e) {
+    view = null;
+  }
+  const roots = [widget, view].filter(Boolean);
   for (const root of roots) {
     for (const selector of selectors) {
       let node = null;
@@ -84,10 +92,20 @@ function findTrackAnchor(doc, widget) {
       if (node) return node;
     }
   }
+  for (const selector of selectors) {
+    let node = null;
+    try {
+      node = doc.querySelector(selector);
+    } catch (e) {
+      continue;
+    }
+    if (node && matchesTitle(node, title)) return node;
+  }
   return null;
 }
 
 export function readTrack(doc) {
+  if (readAdType(doc)) return null;
   let widget = null;
   try {
     widget = doc.querySelector(SELECTORS.widget);
@@ -98,15 +116,7 @@ export function readTrack(doc) {
   const title = textOf(widget, SELECTORS.title) || textOf(doc, SELECTORS.title);
   const artist = textOf(widget, SELECTORS.artist) || textOf(doc, SELECTORS.artist);
   if (!title || !artist) return null;
-  let linkHref = "";
-  try {
-    const a = widget.querySelector(SELECTORS.link);
-    const b = doc.querySelector(SELECTORS.link);
-    linkHref = attrOf(a, "href") || attrOf(b, "href") || "";
-  } catch (e) {
-    linkHref = "";
-  }
-  const anchor = findTrackAnchor(doc, widget);
+  const anchor = findTrackAnchor(doc, widget, title);
   const anchorUris = anchor
     ? [attrOf(anchor, "href"), attrOf(anchor, "data-uri"), attrOf(anchor, "data-context-uri")]
     : [];
@@ -115,11 +125,7 @@ export function readTrack(doc) {
     trackId = extractTrackId(candidate);
     if (trackId) break;
   }
-  if (!trackId) {
-    const slug = slugify(linkHref + "::" + title + "::" + artist);
-    if (!slug) return null;
-    trackId = "slug-" + slug;
-  }
+  if (!trackId) return null;
   return { id: trackId, uri: "spotify:track:" + trackId, title, artist };
 }
 
@@ -152,35 +158,89 @@ function rangeMs(range) {
   return null;
 }
 
-export function readPlayback(doc, wallMs) {
-  let playBtn = null;
-  try {
-    playBtn = doc.querySelector(SELECTORS.playPause);
-  } catch (e) {
-    playBtn = null;
-  }
-  const playing = attrOf(playBtn, "aria-label") === "Pause";
-  const track = readTrack(doc);
+function readTimes(doc) {
   const fromRange = rangeMs(findRangeInput(doc));
-  if (fromRange) {
-    return { track, playing, wallMs, positionMs: fromRange.positionMs, durationMs: fromRange.durationMs };
-  }
+  if (fromRange) return fromRange;
   const positionMs = parseTimeToMs(textOf(doc, SELECTORS.positionText));
   const durationMs = parseTimeToMs(textOf(doc, SELECTORS.durationText));
-  if (!Number.isFinite(positionMs) || !Number.isFinite(durationMs) || durationMs <= 0) {
+  if (!Number.isFinite(positionMs) || !Number.isFinite(durationMs) || durationMs <= 0) return null;
+  return { positionMs, durationMs };
+}
+
+function hasPlayer(doc) {
+  for (const selector of [SELECTORS.widget, SELECTORS.playPause]) {
+    try {
+      if (doc.querySelector(selector)) return true;
+    } catch (e) {
+      continue;
+    }
+  }
+  return false;
+}
+
+function findLikeControl(doc) {
+  try {
+    return doc.querySelector(SELECTORS.widget + " button[aria-checked]")
+      || doc.querySelector("button[aria-checked]");
+  } catch (e) {
     return null;
   }
-  return { track, positionMs, durationMs, playing, wallMs };
+}
+
+function findPlayButton(doc) {
+  try {
+    return doc.querySelector(SELECTORS.playPause);
+  } catch (e) {
+    return null;
+  }
+}
+
+// The now-playing bar carries data-testadtype="ad-type-none" for a track and
+// "ad-type-ad" while an ad plays. The ad bar swap also renders the v2 widget.
+// Use either signal so a stale track anchor can never resurrect an ad segment.
+export function readAdType(doc) {
+  // Check the v2 widget first and independently: it can appear while the
+  // bar still shows ad-type-none with stale track UI, and that state must
+  // read as an ad, never as music.
+  try {
+    if (doc.querySelector(SELECTORS.adWidget)) return "ad";
+  } catch (e) {
+    return null;
+  }
+  let bar = null;
+  try {
+    bar = doc.querySelector(SELECTORS.adBar);
+  } catch (e) {
+    bar = null;
+  }
+  if (bar) {
+    const value = attrOf(bar, "data-testadtype");
+    if (value) return value === "ad-type-none" ? null : value;
+  }
+  return null;
+}
+
+// A playback sample is a track only when readTrack, readTimes, and
+// findLikeControl all succeed; when a player is present, anything else
+// reads as an ad (no player at all returns null). Ads reset the sampler,
+// so they never add to a track's sounded-time budget.
+export function readPlayback(doc, wallMs) {
+  const playBtn = findPlayButton(doc);
+  const playing = attrOf(playBtn, "aria-label") === "Pause";
+  if (readAdType(doc)) {
+    return { kind: "ad", track: null, playing, wallMs, positionMs: 0, durationMs: 0 };
+  }
+  const track = readTrack(doc);
+  const times = readTimes(doc);
+  if (track && times && findLikeControl(doc)) {
+    return { kind: "track", track, playing, wallMs, positionMs: times.positionMs, durationMs: times.durationMs };
+  }
+  if (!hasPlayer(doc)) return null;
+  return { kind: "ad", track: null, playing, wallMs, positionMs: 0, durationMs: 0 };
 }
 
 export function readLikeHint(doc) {
-  let btn = null;
-  try {
-    btn = doc.querySelector(SELECTORS.widget + " button[aria-checked]")
-      || doc.querySelector("button[aria-checked]");
-  } catch (e) {
-    return "unknown";
-  }
+  const btn = findLikeControl(doc);
   if (!btn) return "unknown";
   return attrOf(btn, "aria-checked") === "false" ? "unliked" : "unknown";
 }
@@ -188,24 +248,45 @@ export function readLikeHint(doc) {
 export class SoundedTimeSampler {
   constructor() {
     this.prev = null;
+    this.anchor = null;
   }
 
   reset() {
     this.prev = null;
+    this.anchor = null;
   }
 
   observe(sample) {
-    if (!sample || !sample.track) {
-      this.prev = null;
+    if (!sample || sample.kind !== "track" || !sample.track || !sample.track.id || !(sample.durationMs > 0)) {
+      this.reset();
       return 0;
     }
     const prev = this.prev;
     this.prev = sample;
-    if (!prev || !prev.track || prev.track.id !== sample.track.id) return 0;
-    if (!prev.playing || !sample.playing) return 0;
-    const wall = sample.wallMs - prev.wallMs;
-    const progress = sample.positionMs - prev.positionMs;
-    if (!(wall > 0) || !(progress > 0)) return 0;
+    if (!prev || !prev.track || prev.track.id !== sample.track.id) {
+      this.anchor = sample;
+      return 0;
+    }
+    if (!prev.playing || !sample.playing) {
+      this.anchor = sample.playing ? sample : null;
+      return 0;
+    }
+    const anchor = this.anchor;
+    if (!anchor) {
+      this.anchor = sample;
+      return 0;
+    }
+    const progress = sample.positionMs - anchor.positionMs;
+    if (!(progress > 0)) {
+      // The live progress bar advances in five-second steps while the watcher
+      // polls every second. Keep the last changed position so the next step
+      // credits the whole span. A backward seek starts a new anchor.
+      if (progress < 0) this.anchor = sample;
+      return 0;
+    }
+    const wall = sample.wallMs - anchor.wallMs;
+    this.anchor = sample;
+    if (!(wall > 0)) return 0;
     return Math.min(progress, wall);
   }
 }
@@ -430,4 +511,3 @@ export class LikeToggle {
     return { ok: true, action: "removed" };
   }
 }
-
