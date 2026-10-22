@@ -27,8 +27,15 @@
 #   hand-rolled SHA comparison), and priority is in BLOCK_PRIORITIES or
 #   missing (unprioritized findings block, mirroring
 #   allow_open_issues:none without duplicating the threshold into cubic.yaml).
-#   CLEAR additionally requires a fresh Cubic signal (a thread or review
-#   at or after RUN_STARTED_AT); without one the verdict stays PENDING.
+#   CLEAR additionally requires a fresh Cubic signal: a thread, a review,
+#   or a completed-success Cubic reviewer check-run on this head, at or
+#   after RUN_STARTED_AT. A clean Cubic review posts no review object and no
+#   threads, so the completed check-run is its only signal; without it every
+#   clean head would deadlock PENDING forever. Match the reviewer by GitHub
+#   App slug (stable identity), never by display name (renames freely).
+#   Without one the verdict stays PENDING.
+#   Threads, reviews, and check-runs are each fully paginated before the
+#   verdict, so a signal past the first 100 never reads as silence.
 #   Replies never clear: only isResolved (button or fix-commit auto-resolve).
 #
 # Exit codes (fail-closed):
@@ -63,10 +70,14 @@ ERR_FILE="$WORK_DIR/gh.err"
 PAGE_FILE="$WORK_DIR/page.json"
 THREADS_FILE="$WORK_DIR/threads.json"
 REVIEWS_FILE="$WORK_DIR/reviews.json"
+CHECKS_FILE="$WORK_DIR/checks.json"
+# GitHub App slug(s) identifying the Cubic reviewer. Match by slug, never by
+# the check's display name. Space-separated to allow future Cubic apps.
+CUBIC_APP_SLUGS="${CUBIC_APP_SLUGS:-cubic-dev-ai}"
 
 log() { printf 'cubic-gate: %s\n' "$*"; }
 
-GRAPHQL_QUERY='query CubicGate($owner: String!, $name: String!, $number: Int!, $cursor: String) {
+THREADS_QUERY='query CubicGateThreads($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       reviewThreads(first: 100, after: $cursor) {
@@ -76,23 +87,31 @@ GRAPHQL_QUERY='query CubicGate($owner: String!, $name: String!, $number: Int!, $
           comments(first: 1) { nodes { author { login } body createdAt } }
         }
       }
-      reviews(first: 100) {
+    }
+  }
+}'
+
+REVIEWS_QUERY='query CubicGateReviews($owner: String!, $name: String!, $number: Int!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviews(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
         nodes { author { login } state submittedAt }
       }
     }
   }
 }'
 
-# Fetch one reviewThreads page. $1 = cursor (empty for first page).
+# Fetch one page of $1 (GraphQL query). $2 = cursor (empty for first page).
 gh_page() {
-  local cursor="$1"
+  local query="$1" cursor="$2"
   local owner="${REPO%%/*}" name="${REPO#*/}"
   if [ -n "$cursor" ]; then
     gh api graphql -F owner="$owner" -F name="$name" -F number="$PR_NUMBER" \
-      -F cursor="$cursor" -f query="$GRAPHQL_QUERY" 2>"$ERR_FILE"
+      -F cursor="$cursor" -f query="$query" 2>"$ERR_FILE"
   else
     gh api graphql -F owner="$owner" -F name="$name" -F number="$PR_NUMBER" \
-      -f query="$GRAPHQL_QUERY" 2>"$ERR_FILE"
+      -f query="$query" 2>"$ERR_FILE"
   fi
 }
 
@@ -101,8 +120,10 @@ derive_verdict() {
   jq -n \
     --arg block "$BLOCK_PRIORITIES" \
     --arg run_started "$RUN_STARTED_AT" \
+    --arg slugs "$CUBIC_APP_SLUGS" \
     --slurpfile threads "$THREADS_FILE" \
     --slurpfile reviews "$REVIEWS_FILE" \
+    --slurpfile checks "$CHECKS_FILE" \
     '
     ($block | split(" ") | map(select(length > 0))) as $prios
     | (if ($run_started | length) > 0 then $run_started else null end) as $rs
@@ -118,8 +139,13 @@ derive_verdict() {
             created: ($c.createdAt // "") }
       )) as $cubic
     | ((($reviews[0] // []) | map(select((.author // {}) | is_cubic_author))) | map(.submittedAt // "")) as $review_times
-    | (([$cubic[] | .created] + $review_times)
-        | map(select($rs == null or . >= $rs))
+    | (($slugs | split(" ") | map(select(length > 0))) as $slugs_arr
+        | (($checks[0] // []) | map(
+            select(.status == "completed" and .conclusion == "success")
+            | select((.app.slug // "") as $s | ($slugs_arr | index($s)) != null)
+          ) | map(.completed_at // ""))) as $check_times
+    | (([$cubic[] | .created] + $review_times + $check_times)
+        | map(select(length > 0 and ($rs == null or . >= $rs)))
         | length) as $fresh_count
     | (($cubic | map(
         select(.resolved == false and .outdated == false
@@ -130,6 +156,7 @@ derive_verdict() {
                  else "PENDING" end),
         cubic_threads: ($cubic | length),
         cubic_reviews: ((($reviews[0] // []) | map(select((.author // {}) | is_cubic_author))) | length),
+        cubic_check_runs: ($check_times | length),
         blockers: $blockers }
     '
 }
@@ -138,46 +165,76 @@ blocker_summary() {
   printf '%s' "$VERDICT_JSON" | jq -r '[.blockers[] | "\(.id) (\(.priority), \(.path):\(.line))"] | join("; ")'
 }
 
-# One poll round. Sets STATUS, VERDICT_JSON, LAST_ERROR. Always returns 0.
-poll_once() {
-  local cursor="" page pr_json page_threads has_next
-  printf '[]\n' >"$THREADS_FILE"
-  printf '[]\n' >"$REVIEWS_FILE"
+# Fetch every page of one PR connection into $3 as a JSON array. $1 = query,
+# $2 = connection field name. On failure sets LAST_ERROR and returns 1.
+fetch_connection() {
+  local query="$1" connection="$2" out_file="$3"
+  local cursor="" page pr_json has_next
+  if ! printf '[]\n' >"$out_file"; then
+    LAST_ERROR="failed to initialize connection file"
+    return 1
+  fi
   while :; do
     : >"$ERR_FILE"
-    if ! page="$(gh_page "$cursor")"; then
+    if ! page="$(gh_page "$query" "$cursor")"; then
       LAST_ERROR="$(cat "$ERR_FILE" 2>/dev/null || echo 'gh exited non-zero')"
-      STATUS="PENDING"
-      return 0
+      return 1
     fi
     if ! pr_json="$(printf '%s' "$page" | jq '.data.repository.pullRequest')"; then
       LAST_ERROR="unparseable GraphQL response"
-      STATUS="PENDING"
-      return 0
+      return 1
     fi
     if [ "$pr_json" = "null" ]; then
       LAST_ERROR="$(printf '%s' "$page" | jq -c '.errors // "pull request not found in response"')"
-      STATUS="PENDING"
-      return 0
+      return 1
     fi
-    page_threads="$(printf '%s' "$pr_json" | jq '.reviewThreads.nodes // []')"
-    printf '%s' "$page_threads" >"$PAGE_FILE"
-    jq -s 'add' "$THREADS_FILE" "$PAGE_FILE" >"$WORK_DIR/merged.json"
-    mv "$WORK_DIR/merged.json" "$THREADS_FILE"
-    if [ -z "$cursor" ]; then
-      printf '%s' "$pr_json" | jq '.reviews.nodes // []' >"$REVIEWS_FILE"
+    if ! printf '%s' "$pr_json" | jq --arg c "$connection" '.[$c].nodes // []' >"$PAGE_FILE"; then
+      LAST_ERROR="unparseable GraphQL response"
+      return 1
     fi
-    has_next="$(printf '%s' "$pr_json" | jq -r '.reviewThreads.pageInfo.hasNextPage // false')"
+    if ! jq -s 'add' "$out_file" "$PAGE_FILE" >"$WORK_DIR/merged.json" ||
+      ! mv "$WORK_DIR/merged.json" "$out_file"; then
+      LAST_ERROR="failed to merge connection pages"
+      return 1
+    fi
+    if ! has_next="$(printf '%s' "$pr_json" | jq -r --arg c "$connection" '.[$c].pageInfo.hasNextPage // false')"; then
+      LAST_ERROR="unparseable GraphQL response"
+      return 1
+    fi
     if [ "$has_next" != "true" ]; then
       break
     fi
-    cursor="$(printf '%s' "$pr_json" | jq -r '.reviewThreads.pageInfo.endCursor // empty')"
+    if ! cursor="$(printf '%s' "$pr_json" | jq -r --arg c "$connection" '.[$c].pageInfo.endCursor // empty')"; then
+      LAST_ERROR="unparseable GraphQL response"
+      return 1
+    fi
     if [ -z "$cursor" ]; then
       LAST_ERROR="hasNextPage without endCursor"
-      STATUS="PENDING"
-      return 0
+      return 1
     fi
   done
+  return 0
+}
+
+# One poll round. Sets STATUS, VERDICT_JSON, LAST_ERROR. Always returns 0.
+poll_once() {
+  printf '[]\n' >"$CHECKS_FILE"
+  if ! checks_page="$(gh api "repos/$REPO/commits/$HEAD_SHA/check-runs?per_page=100" --paginate 2>"$ERR_FILE" | jq -s '[.[].check_runs // [] | .[]]')"; then
+    LAST_ERROR="$(cat "$ERR_FILE" 2>/dev/null || echo 'check-runs query failed')"
+    STATUS="PENDING"
+    return 0
+  fi
+  if ! checks_runs="$(printf '%s' "$checks_page" | jq 'if type == "array" then . else [] end')"; then
+    LAST_ERROR="unparseable check-runs response"
+    STATUS="PENDING"
+    return 0
+  fi
+  printf '%s' "$checks_runs" >"$CHECKS_FILE"
+  if ! fetch_connection "$THREADS_QUERY" reviewThreads "$THREADS_FILE" ||
+    ! fetch_connection "$REVIEWS_QUERY" reviews "$REVIEWS_FILE"; then
+    STATUS="PENDING"
+    return 0
+  fi
   if ! VERDICT_JSON="$(derive_verdict)"; then
     LAST_ERROR="verdict computation failed"
     STATUS="PENDING"
@@ -217,7 +274,8 @@ ELAPSED=$((SECONDS - START))
 if [ "$STATUS" = "CLEAR" ]; then
   CUBIC_THREADS="$(printf '%s' "$VERDICT_JSON" | jq -r '.cubic_threads')"
   CUBIC_REVIEWS="$(printf '%s' "$VERDICT_JSON" | jq -r '.cubic_reviews')"
-  log "CLEAR - no unresolved Cubic (${BLOCK_PRIORITIES}) threads on ${HEAD_SHA} (${CUBIC_THREADS} cubic thread(s), ${CUBIC_REVIEWS} cubic review(s) seen)."
+  CUBIC_CHECKS="$(printf '%s' "$VERDICT_JSON" | jq -r '.cubic_check_runs // 0')"
+  log "CLEAR - no unresolved Cubic (${BLOCK_PRIORITIES}) threads on ${HEAD_SHA} (${CUBIC_THREADS} cubic thread(s), ${CUBIC_REVIEWS} cubic review(s), ${CUBIC_CHECKS} cubic check-run(s) seen)."
   exit 0
 fi
 if [ "$STATUS" = "BLOCKED" ]; then
