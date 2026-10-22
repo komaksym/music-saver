@@ -1,0 +1,53 @@
+name: e2e-nightly
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+permissions:
+  contents: read
+concurrency:
+  group: e2e-nightly-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  agent-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      E2E_REQUIRE_AUTH: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes xvfb
+      - name: Install agent-browser
+        run: npm install -g agent-browser && agent-browser install --with-deps
+      - name: Restore Spotify cookies
+        env:
+          SPOTIFY_E2E_COOKIES_B64: ${{ secrets.SPOTIFY_E2E_COOKIES_B64 }}
+        shell: bash
+        run: |
+          mkdir -p tests/e2e-auth-state
+          if [ -z "$SPOTIFY_E2E_COOKIES_B64" ]; then
+            echo "SPOTIFY_E2E_COOKIES_B64 is not configured" >&2
+            exit 1
+          fi
+          printf '%s' "$SPOTIFY_E2E_COOKIES_B64" | base64 --decode > tests/e2e-auth-state/cookies.json
+          chmod 600 tests/e2e-auth-state/cookies.json
+          bash scripts/e2e-agent-browser.sh cookies-restore
+      - name: Run E2E smoke (headless)
+        run: bash scripts/e2e-agent-browser.sh smoke
+      - name: Run E2E player proof (Xvfb)
+        run: xvfb-run --auto-servernum bash scripts/e2e-agent-browser.sh player
+      - name: Run scenario matrix (Xvfb)
+        run: xvfb-run --auto-servernum bash scripts/e2e-matrix.sh
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: e2e-nightly-${{ github.run_id }}
+          path: e2e-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
