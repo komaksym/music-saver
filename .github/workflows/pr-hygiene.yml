@@ -17,7 +17,23 @@ jobs:
           BODY: ${{ github.event.pull_request.body }}
         run: |
           echo Checking PR body for required headings...
-          text=$(printf '%s' "$BODY" | sed '/^```/,/^```$/d')
+          # Strip fenced code blocks. A fence opened with N backticks closes
+          # only on a run of at least N backticks, so a four-backtick fence
+          # does not swallow the headings that follow it.
+          text=$(printf '%s' "$BODY" | awk '
+            {
+              line = $0
+              sub(/^[[:space:]]+/, "", line)
+              n = 0
+              while (substr(line, n + 1, 1) == "`") n++
+              if (open == 0) {
+                if (n >= 3) { open = n; next }
+                print
+                next
+              }
+              if (n >= open && substr(line, n + 1) ~ /^[[:space:]]*$/) open = 0
+            }
+          ')
           missing=0
           for h in '## Summary' '## Validation' '## Risks / Notes' '## Breaking changes' '## Visual summary'; do
             if ! printf '%s' "$text" | grep -Fqx -- "$h"; then
