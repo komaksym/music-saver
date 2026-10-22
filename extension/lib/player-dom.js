@@ -220,9 +220,9 @@ export function readAdType(doc) {
   return null;
 }
 
-// A playback sample is either a track with a stable ID and positive duration,
-// or an ad with no track identity or timing. Ads reset the sampler, so they
-// never add to a track's sounded-time budget.
+// A playback sample is a track only when readTrack, readTimes, and
+// findLikeControl all succeed; anything else reads as an ad. Ads reset the
+// sampler, so they never add to a track's sounded-time budget.
 export function readPlayback(doc, wallMs) {
   const playBtn = findPlayButton(doc);
   const playing = attrOf(playBtn, "aria-label") === "Pause";
