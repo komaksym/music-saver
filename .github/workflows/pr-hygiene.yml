@@ -17,21 +17,25 @@ jobs:
           BODY: ${{ github.event.pull_request.body }}
         run: |
           echo Checking PR body for required headings...
-          # Strip fenced code blocks. A fence opened with N backticks closes
-          # only on a run of at least N backticks, so a four-backtick fence
-          # does not swallow the headings that follow it.
+          # Strip fenced code blocks. A fence opened with N backticks or tildes
+          # closes only on a run of at least N of the same character, so a
+          # four-backtick fence does not swallow the headings that follow it
+          # and tilde-fenced blocks do not leak fake headings.
           text=$(printf '%s' "$BODY" | awk '
             {
               line = $0
               sub(/^[[:space:]]+/, "", line)
               n = 0
-              while (substr(line, n + 1, 1) == "`") n++
+              c = substr(line, 1, 1)
+              if (c == "`" || c == "~") {
+                while (substr(line, n + 1, 1) == c) n++
+              }
               if (open == 0) {
-                if (n >= 3) { open = n; next }
+                if (n >= 3) { open = n; fence = c; next }
                 print
                 next
               }
-              if (n >= open && substr(line, n + 1) ~ /^[[:space:]]*$/) open = 0
+              if (c == fence && n >= open && substr(line, n + 1) ~ /^[[:space:]]*$/) open = 0
             }
           ')
           missing=0
