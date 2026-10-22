@@ -1,6 +1,18 @@
 name: e2e-nightly
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/e2e-nightly.yml
+      - docs/e2e.md
+      - scripts/check-browser-stack.sh
+      - scripts/e2e-agent-browser.sh
+      - scripts/e2e-cookies.mjs
+      - scripts/e2e-matrix.json
+      - scripts/e2e-matrix.sh
+      - scripts/e2e-proof.sh
+      - tests/browser-stack.test.js
+      - tests/e2e-cookies.test.js
   schedule:
     - cron: "17 3 * * *"
 permissions:
