@@ -3,6 +3,8 @@ name: cubic-gate
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
+  pull_request_review:
+    types: [submitted]
 
 permissions:
   contents: read

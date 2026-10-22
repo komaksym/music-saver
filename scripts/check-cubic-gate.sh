@@ -10,19 +10,25 @@
 #   BLOCK_PRIORITIES  whitespace-separated blocking priorities, e.g. "P0 P1".
 #                     This is the ONLY gate threshold; cubic.yaml tunes review
 #                     behavior and never the gate. Default: "P0 P1".
-#   RUN_STARTED_AT    ISO-8601 timestamp of the triggering pull_request event
-#                     (pull_request.updated_at). Cubic signals older than this
-#                     are ignored so a same-SHA `edited` re-run cannot read a
-#                     stale pre-edit CLEAR. Empty (local runs) disables the guard.
+#   RUN_STARTED_AT    ISO-8601 timestamp of the triggering event
+#                     (pull_request.updated_at). Only Cubic signals at or
+#                     after this count as a fresh response, so a same-SHA
+#                     `edited` re-run cannot read a stale pre-edit CLEAR.
+#                     Blockers ignore it: every current unresolved thread
+#                     is evaluated. Empty (local runs, or events without
+#                     the timestamp) disables the freshness guard.
 #
 # Model (see synthesis.md):
 #   GateVerdict = CLEAR | BLOCKED(blockers) | PENDING(reason) | TIMEOUT(lastError).
 #   The poll loop derives the verdict fresh every tick; no latched state.
-#   A thread blocks iff: author is cubic-dev-ai, unresolved, NOT outdated
-#   (forge-computed freshness on the head diff, never a hand-rolled SHA
-#   comparison), createdAt >= RUN_STARTED_AT, and priority is in
-#   BLOCK_PRIORITIES or missing (unprioritized findings block, mirroring
+#   A thread blocks iff: author is exactly cubic-dev-ai (GraphQL strips
+#   the [bot] suffix) or cubic-dev-ai[bot] (REST), unresolved, NOT
+#   outdated (forge-computed freshness on the head diff, never a
+#   hand-rolled SHA comparison), and priority is in BLOCK_PRIORITIES or
+#   missing (unprioritized findings block, mirroring
 #   allow_open_issues:none without duplicating the threshold into cubic.yaml).
+#   CLEAR additionally requires a fresh Cubic signal (a thread or review
+#   at or after RUN_STARTED_AT); without one the verdict stays PENDING.
 #   Replies never clear: only isResolved (button or fix-commit auto-resolve).
 #
 # Exit codes (fail-closed):
@@ -100,28 +106,30 @@ derive_verdict() {
     '
     ($block | split(" ") | map(select(length > 0))) as $prios
     | (if ($run_started | length) > 0 then $run_started else null end) as $rs
-    | (($threads[0] // []) | map(
+    | def is_cubic_author: (.login // "") == "cubic-dev-ai"
+        or ((.login // "") == "cubic-dev-ai[bot]");
+    (($threads[0] // []) | map(
         .comments.nodes[0] as $c
         | select($c != null)
-        | select((($c.author.login // "") | contains("cubic-dev-ai")))
-        | select($rs == null or ((($c.createdAt // "") >= $rs)))
+        | select(($c.author // {}) | is_cubic_author)
         | { id: .id, path: (.path // "?"), line: (.line // "?"),
             priority: (([(($c.body // "") | scan("P[0-3]"))][0]) // "none"),
-            resolved: (.isResolved // false), outdated: (.isOutdated // false) }
+            resolved: (.isResolved // false), outdated: (.isOutdated // false),
+            created: ($c.createdAt // "") }
       )) as $cubic
-    | (((($reviews[0] // []) | map(
-        select(((.author.login // "") | contains("cubic-dev-ai")))
-        | select($rs == null or (((.submittedAt // "") >= $rs)))
-      )) | length)) as $review_count
+    | ((($reviews[0] // []) | map(select((.author // {}) | is_cubic_author))) | map(.submittedAt // "")) as $review_times
+    | (([$cubic[] | .created] + $review_times)
+        | map(select($rs == null or . >= $rs))
+        | length) as $fresh_count
     | (($cubic | map(
         select(.resolved == false and .outdated == false
                and (.priority as $p | $p == "none" or (($prios | index($p)) != null)))
       ))) as $blockers
     | { status: (if ($blockers | length) > 0 then "BLOCKED"
-                 elif (($cubic | length) > 0 or $review_count > 0) then "CLEAR"
+                 elif $fresh_count > 0 then "CLEAR"
                  else "PENDING" end),
         cubic_threads: ($cubic | length),
-        cubic_reviews: $review_count,
+        cubic_reviews: ((($reviews[0] // []) | map(select((.author // {}) | is_cubic_author))) | length),
         blockers: $blockers }
     '
 }

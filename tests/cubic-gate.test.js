@@ -132,3 +132,92 @@ test("silent Cubic with TIMEOUT 0 fails closed", () => {
   assert.equal(r.status, 1);
   assert.match(r.stdout, /no cubic signal/);
 });
+
+test("impersonator author is not a Cubic signal and does not block", () => {
+  const r = runGate({
+    threads: [
+      thread({
+        id: "TR_IMPOSTOR",
+        author: "not-cubic-dev-ai",
+        body: "P1 fake blocker",
+      }),
+    ],
+    reviews: [
+      {
+        author: { login: "not-cubic-dev-ai" },
+        state: "COMMENTED",
+        submittedAt: "2026-10-22T17:00:00Z",
+      },
+    ],
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /no cubic signal/);
+  assert.doesNotMatch(r.stdout, /TR_IMPOSTOR/);
+});
+
+test("bare cubic-dev-ai login (GraphQL form) still blocks", () => {
+  const r = runGate({
+    threads: [thread({ id: "TR_BARE_LOGIN", author: "cubic-dev-ai" })],
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /TR_BARE_LOGIN/);
+});
+
+test("stale unresolved P1 still blocks despite the freshness cutoff", () => {
+  const r = runGate({
+    threads: [
+      thread({ id: "TR_STALE_P1", createdAt: "2026-10-22T15:00:00Z" }),
+    ],
+    env: { RUN_STARTED_AT: "2026-10-22T16:00:00Z" },
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /TR_STALE_P1/);
+});
+
+test("stale P1 plus a fresh P2-only review still BLOCKS", () => {
+  const r = runGate({
+    threads: [
+      thread({ id: "TR_STALE_P1", createdAt: "2026-10-22T15:00:00Z" }),
+    ],
+    reviews: [
+      {
+        author: { login: "cubic-dev-ai[bot]" },
+        state: "COMMENTED",
+        submittedAt: "2026-10-22T17:00:00Z",
+      },
+    ],
+    env: { RUN_STARTED_AT: "2026-10-22T16:00:00Z" },
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /TR_STALE_P1/);
+});
+
+test("stale pre-event threads alone cannot CLEAR without a fresh signal", () => {
+  const r = runGate({
+    threads: [
+      thread({
+        id: "TR_STALE_P2",
+        body: "P2 nit on wording",
+        createdAt: "2026-10-22T15:00:00Z",
+      }),
+    ],
+    env: { RUN_STARTED_AT: "2026-10-22T16:00:00Z" },
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /no cubic signal/);
+});
+
+test("fresh Cubic review after the cutoff yields CLEAR", () => {
+  const r = runGate({
+    reviews: [
+      {
+        author: { login: "cubic-dev-ai[bot]" },
+        state: "COMMENTED",
+        submittedAt: "2026-10-22T17:00:00Z",
+      },
+    ],
+    env: { RUN_STARTED_AT: "2026-10-22T16:00:00Z" },
+  });
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /CLEAR/);
+});
