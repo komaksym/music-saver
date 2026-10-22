@@ -161,12 +161,12 @@ poll_once() {
   printf '[]\n' >"$THREADS_FILE"
   printf '[]\n' >"$REVIEWS_FILE"
   printf '[]\n' >"$CHECKS_FILE"
-  if ! checks_page="$(gh api "repos/$REPO/commits/$HEAD_SHA/check-runs?per_page=100" 2>"$ERR_FILE")"; then
+  if ! checks_page="$(gh api "repos/$REPO/commits/$HEAD_SHA/check-runs?per_page=100" --paginate 2>"$ERR_FILE" | jq -s '[.[].check_runs // [] | .[]]')"; then
     LAST_ERROR="$(cat "$ERR_FILE" 2>/dev/null || echo 'check-runs query failed')"
     STATUS="PENDING"
     return 0
   fi
-  if ! checks_runs="$(printf '%s' "$checks_page" | jq '.check_runs // []')"; then
+  if ! checks_runs="$(printf '%s' "$checks_page" | jq 'if type == "array" then . else [] end')"; then
     LAST_ERROR="unparseable check-runs response"
     STATUS="PENDING"
     return 0
