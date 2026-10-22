@@ -29,5 +29,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          RUN_STARTED_AT: ${{ github.event.pull_request.updated_at }}
+          RUN_STARTED_AT: ${{ github.event.review.submitted_at || github.event.pull_request.updated_at }}
         run: bash scripts/check-cubic-gate.sh "$HEAD_SHA" "$PR_NUMBER"
