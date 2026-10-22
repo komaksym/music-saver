@@ -16,7 +16,9 @@ while true; do
   pending=()
   failed=()
   for ctx in $REQUIRED; do
-    run=$(GH_HEAD="$HEAD_SHA" gh api "repos/$REPO/commits/$HEAD_SHA/check-runs?check_name=$ctx&per_page=50" --jq '[.check_runs[] | select(.head_sha == $ENV.GH_HEAD and .status == "completed")] | sort_by(.completed_at) | last | (.conclusion // "none")')
+    # Newest run for this head wins, even when it is still running: an older
+    # success must not mask a rerun that has not finished.
+    run=$(GH_HEAD="$HEAD_SHA" gh api "repos/$REPO/commits/$HEAD_SHA/check-runs?check_name=$ctx&per_page=50" --jq '[.check_runs[] | select(.head_sha == $ENV.GH_HEAD)] | sort_by(.id) | last | if . == null then "none" elif .status != "completed" then "pending" else (.conclusion // "none") end')
     if [ "$run" = "success" ]; then
       continue
     fi
