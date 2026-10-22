@@ -39,12 +39,12 @@ const checkRun = ({
   status = "completed",
   conclusion = "success",
   slug = "cubic-dev-ai",
-  completedAt = "2026-10-22T17:00:00Z",
+  startedAt = "2026-10-22T17:00:00Z",
 } = {}) => ({
   status,
   conclusion,
   app: { slug },
-  completed_at: completedAt,
+  started_at: startedAt,
 });
 
 const runGate = ({ threads = [], reviews = [], checkRuns = [], env = {} } = {}) => {
@@ -181,7 +181,7 @@ test("non-Cubic app slug check-run is not a signal and fails closed", () => {
 test("display name is never matched: Cubic name with wrong slug fails closed", () => {
   const r = runGate({
     checkRuns: [
-      { status: "completed", conclusion: "success", app: { slug: "github-actions", name: "cubic \u00b7 AI code reviewer" }, completed_at: "2026-10-22T17:00:00Z" },
+      { status: "completed", conclusion: "success", app: { slug: "github-actions", name: "cubic · AI code reviewer" }, started_at: "2026-10-22T17:00:00Z" },
     ],
   });
   assert.equal(r.status, 1);
@@ -288,7 +288,7 @@ test("clean Cubic review (completed-success check-run, no threads or reviews) yi
 
 test("stale completed check-run before the cutoff cannot CLEAR", () => {
   const r = runGate({
-    checkRuns: [checkRun({ completedAt: "2026-10-22T15:00:00Z" })],
+    checkRuns: [checkRun({ startedAt: "2026-10-22T15:00:00Z" })],
     env: { RUN_STARTED_AT: "2026-10-22T16:00:00Z" },
   });
   assert.equal(r.status, 1);
