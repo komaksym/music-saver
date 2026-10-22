@@ -6,10 +6,10 @@
 - Reflect the actual diff, not the ticket title
 
 ## Validation
-- Lint: passed | failed | not run | N/A
-- Typecheck: passed | failed | not run | N/A
-- Test: passed | failed | not run | N/A
-- Build/Package: passed | failed | not run | N/A
+- Lint: passed | failed | not run | N/A — command + result or CI link
+- Typecheck: passed | failed | not run | N/A — command + result or CI link
+- Test: passed | failed | not run | N/A — command + result or CI link
+- Build/Package: passed | failed | not run | N/A — command + result or CI link
 
 ## Risks / Notes
 - Migrations, config changes, rollout concerns, limitations, or follow-up work
