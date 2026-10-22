@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  checks: read
 
 concurrency:
   group: cubic-gate-${{ github.event.pull_request.number }}

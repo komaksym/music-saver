@@ -31,10 +31,27 @@ const thread = ({
   comments: { nodes: [{ author: { login: author }, body, createdAt }] },
 });
 
-const runGate = ({ threads = [], reviews = [], env = {} } = {}) => {
+// A completed-success Cubic reviewer check-run on the head counts as a fresh
+// Cubic signal: a clean Cubic review posts no review object and no threads,
+// so the check-run is its only signal. Matched by GitHub App slug (stable
+// identity), never by display name (renames freely).
+const checkRun = ({
+  status = "completed",
+  conclusion = "success",
+  slug = "cubic-dev-ai",
+  completedAt = "2026-10-22T17:00:00Z",
+} = {}) => ({
+  status,
+  conclusion,
+  app: { slug },
+  completed_at: completedAt,
+});
+
+const runGate = ({ threads = [], reviews = [], checkRuns = [], env = {} } = {}) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cubic-gate-"));
   try {
     const fixtureFile = path.join(dir, "fixture.json");
+    const checksFile = path.join(dir, "checks.json");
     fs.writeFileSync(
       fixtureFile,
       JSON.stringify({
@@ -51,8 +68,12 @@ const runGate = ({ threads = [], reviews = [], env = {} } = {}) => {
         },
       }),
     );
+    fs.writeFileSync(checksFile, JSON.stringify({ check_runs: checkRuns }));
     const ghStub = path.join(dir, "gh");
-    fs.writeFileSync(ghStub, `#!/bin/sh\ncat "${fixtureFile}"\n`);
+    fs.writeFileSync(
+      ghStub,
+      `#!/bin/sh\nif [ "$2" = "graphql" ]; then cat "${fixtureFile}"; else cat "${checksFile}"; fi\n`,
+    );
     fs.chmodSync(ghStub, 0o755);
     return spawnSync(
       "bash",
@@ -128,7 +149,41 @@ test("unprioritized Cubic thread blocks", () => {
 });
 
 test("silent Cubic with TIMEOUT 0 fails closed", () => {
-  const r = runGate({ threads: [], reviews: [] });
+  const r = runGate({ threads: [], reviews: [], checkRuns: [] });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /no cubic signal/);
+});
+
+test("pending reviewer check-run is not a signal and fails closed", () => {
+  const r = runGate({
+    checkRuns: [checkRun({ status: "in_progress", conclusion: null })],
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /no cubic signal/);
+});
+
+test("failed reviewer check-run is not a signal and fails closed", () => {
+  const r = runGate({
+    checkRuns: [checkRun({ conclusion: "failure" })],
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /no cubic signal/);
+});
+
+test("non-Cubic app slug check-run is not a signal and fails closed", () => {
+  const r = runGate({
+    checkRuns: [checkRun({ slug: "some-other-reviewer" })],
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /no cubic signal/);
+});
+
+test("display name is never matched: Cubic name with wrong slug fails closed", () => {
+  const r = runGate({
+    checkRuns: [
+      { status: "completed", conclusion: "success", app: { slug: "github-actions", name: "cubic \u00b7 AI code reviewer" }, completed_at: "2026-10-22T17:00:00Z" },
+    ],
+  });
   assert.equal(r.status, 1);
   assert.match(r.stdout, /no cubic signal/);
 });
@@ -216,6 +271,44 @@ test("fresh Cubic review after the cutoff yields CLEAR", () => {
         submittedAt: "2026-10-22T17:00:00Z",
       },
     ],
+    env: { RUN_STARTED_AT: "2026-10-22T16:00:00Z" },
+  });
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /CLEAR/);
+});
+
+test("clean Cubic review (completed-success check-run, no threads or reviews) yields CLEAR", () => {
+  const r = runGate({
+    checkRuns: [checkRun({})],
+    env: { RUN_STARTED_AT: "2026-10-22T16:00:00Z" },
+  });
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /CLEAR/);
+});
+
+test("stale completed check-run before the cutoff cannot CLEAR", () => {
+  const r = runGate({
+    checkRuns: [checkRun({ completedAt: "2026-10-22T15:00:00Z" })],
+    env: { RUN_STARTED_AT: "2026-10-22T16:00:00Z" },
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /no cubic signal/);
+});
+
+test("completed Cubic check-run does not override a blocking P1 thread", () => {
+  const r = runGate({
+    threads: [thread({ id: "TR_P1_STILL_OPEN" })],
+    checkRuns: [checkRun({})],
+    env: { RUN_STARTED_AT: "2026-10-22T16:00:00Z" },
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /TR_P1_STILL_OPEN/);
+});
+
+test("completed Cubic check-run clears alongside resolved P1 threads", () => {
+  const r = runGate({
+    threads: [thread({ id: "TR_RESOLVED_P1", resolved: true })],
+    checkRuns: [checkRun({})],
     env: { RUN_STARTED_AT: "2026-10-22T16:00:00Z" },
   });
   assert.equal(r.status, 0);

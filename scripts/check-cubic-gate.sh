@@ -27,8 +27,13 @@
 #   hand-rolled SHA comparison), and priority is in BLOCK_PRIORITIES or
 #   missing (unprioritized findings block, mirroring
 #   allow_open_issues:none without duplicating the threshold into cubic.yaml).
-#   CLEAR additionally requires a fresh Cubic signal (a thread or review
-#   at or after RUN_STARTED_AT); without one the verdict stays PENDING.
+#   CLEAR additionally requires a fresh Cubic signal: a thread, a review,
+#   or a completed-success Cubic reviewer check-run on this head, at or
+#   after RUN_STARTED_AT. A clean Cubic review posts no review object and no
+#   threads, so the completed check-run is its only signal; without it every
+#   clean head would deadlock PENDING forever. Match the reviewer by GitHub
+#   App slug (stable identity), never by display name (renames freely).
+#   Without one the verdict stays PENDING.
 #   Replies never clear: only isResolved (button or fix-commit auto-resolve).
 #
 # Exit codes (fail-closed):
@@ -63,6 +68,10 @@ ERR_FILE="$WORK_DIR/gh.err"
 PAGE_FILE="$WORK_DIR/page.json"
 THREADS_FILE="$WORK_DIR/threads.json"
 REVIEWS_FILE="$WORK_DIR/reviews.json"
+CHECKS_FILE="$WORK_DIR/checks.json"
+# GitHub App slug(s) identifying the Cubic reviewer. Match by slug, never by
+# the check's display name. Space-separated to allow future Cubic apps.
+CUBIC_APP_SLUGS="${CUBIC_APP_SLUGS:-cubic-dev-ai}"
 
 log() { printf 'cubic-gate: %s\n' "$*"; }
 
@@ -101,8 +110,10 @@ derive_verdict() {
   jq -n \
     --arg block "$BLOCK_PRIORITIES" \
     --arg run_started "$RUN_STARTED_AT" \
+    --arg slugs "$CUBIC_APP_SLUGS" \
     --slurpfile threads "$THREADS_FILE" \
     --slurpfile reviews "$REVIEWS_FILE" \
+    --slurpfile checks "$CHECKS_FILE" \
     '
     ($block | split(" ") | map(select(length > 0))) as $prios
     | (if ($run_started | length) > 0 then $run_started else null end) as $rs
@@ -118,8 +129,13 @@ derive_verdict() {
             created: ($c.createdAt // "") }
       )) as $cubic
     | ((($reviews[0] // []) | map(select((.author // {}) | is_cubic_author))) | map(.submittedAt // "")) as $review_times
-    | (([$cubic[] | .created] + $review_times)
-        | map(select($rs == null or . >= $rs))
+    | (($slugs | split(" ") | map(select(length > 0))) as $slugs_arr
+        | (($checks[0] // []) | map(
+            select(.status == "completed" and .conclusion == "success")
+            | select((.app.slug // "") as $s | ($slugs_arr | index($s)) != null)
+          ) | map(.completed_at // ""))) as $check_times
+    | (([$cubic[] | .created] + $review_times + $check_times)
+        | map(select(length > 0 and ($rs == null or . >= $rs)))
         | length) as $fresh_count
     | (($cubic | map(
         select(.resolved == false and .outdated == false
@@ -130,6 +146,7 @@ derive_verdict() {
                  else "PENDING" end),
         cubic_threads: ($cubic | length),
         cubic_reviews: ((($reviews[0] // []) | map(select((.author // {}) | is_cubic_author))) | length),
+        cubic_check_runs: ($check_times | length),
         blockers: $blockers }
     '
 }
@@ -143,6 +160,18 @@ poll_once() {
   local cursor="" page pr_json page_threads has_next
   printf '[]\n' >"$THREADS_FILE"
   printf '[]\n' >"$REVIEWS_FILE"
+  printf '[]\n' >"$CHECKS_FILE"
+  if ! checks_page="$(gh api "repos/$REPO/commits/$HEAD_SHA/check-runs?per_page=100" 2>"$ERR_FILE")"; then
+    LAST_ERROR="$(cat "$ERR_FILE" 2>/dev/null || echo 'check-runs query failed')"
+    STATUS="PENDING"
+    return 0
+  fi
+  if ! checks_runs="$(printf '%s' "$checks_page" | jq '.check_runs // []')"; then
+    LAST_ERROR="unparseable check-runs response"
+    STATUS="PENDING"
+    return 0
+  fi
+  printf '%s' "$checks_runs" >"$CHECKS_FILE"
   while :; do
     : >"$ERR_FILE"
     if ! page="$(gh_page "$cursor")"; then
@@ -217,7 +246,8 @@ ELAPSED=$((SECONDS - START))
 if [ "$STATUS" = "CLEAR" ]; then
   CUBIC_THREADS="$(printf '%s' "$VERDICT_JSON" | jq -r '.cubic_threads')"
   CUBIC_REVIEWS="$(printf '%s' "$VERDICT_JSON" | jq -r '.cubic_reviews')"
-  log "CLEAR - no unresolved Cubic (${BLOCK_PRIORITIES}) threads on ${HEAD_SHA} (${CUBIC_THREADS} cubic thread(s), ${CUBIC_REVIEWS} cubic review(s) seen)."
+  CUBIC_CHECKS="$(printf '%s' "$VERDICT_JSON" | jq -r '.cubic_check_runs // 0')"
+  log "CLEAR - no unresolved Cubic (${BLOCK_PRIORITIES}) threads on ${HEAD_SHA} (${CUBIC_THREADS} cubic thread(s), ${CUBIC_REVIEWS} cubic review(s), ${CUBIC_CHECKS} cubic check-run(s) seen)."
   exit 0
 fi
 if [ "$STATUS" = "BLOCKED" ]; then
