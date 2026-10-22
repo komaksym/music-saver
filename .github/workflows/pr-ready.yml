@@ -23,8 +23,7 @@ jobs:
         run: |
           git fetch origin "$BASE_REF"
           base="origin/$BASE_REF"
-          mb=$(git merge-base HEAD "$base")
-          if git merge-tree "$mb" HEAD "$base" | grep -q '^+<<<<<<< '; then
+          if ! git merge-tree --write-tree HEAD "$base" >/dev/null; then
             echo "::error::PR conflicts with $base; rebase or merge it first"
             exit 1
           fi
