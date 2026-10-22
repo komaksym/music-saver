@@ -29,6 +29,7 @@
 #   allow_open_issues:none without duplicating the threshold into cubic.yaml).
 #   CLEAR additionally requires a fresh Cubic signal (a thread or review
 #   at or after RUN_STARTED_AT); without one the verdict stays PENDING.
+#   Threads and reviews are each fully paginated before deriving the verdict.
 #   Replies never clear: only isResolved (button or fix-commit auto-resolve).
 #
 # Exit codes (fail-closed):
@@ -66,7 +67,7 @@ REVIEWS_FILE="$WORK_DIR/reviews.json"
 
 log() { printf 'cubic-gate: %s\n' "$*"; }
 
-GRAPHQL_QUERY='query CubicGate($owner: String!, $name: String!, $number: Int!, $cursor: String) {
+THREADS_QUERY='query CubicGateThreads($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       reviewThreads(first: 100, after: $cursor) {
@@ -76,23 +77,31 @@ GRAPHQL_QUERY='query CubicGate($owner: String!, $name: String!, $number: Int!, $
           comments(first: 1) { nodes { author { login } body createdAt } }
         }
       }
-      reviews(first: 100) {
+    }
+  }
+}'
+
+REVIEWS_QUERY='query CubicGateReviews($owner: String!, $name: String!, $number: Int!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviews(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
         nodes { author { login } state submittedAt }
       }
     }
   }
 }'
 
-# Fetch one reviewThreads page. $1 = cursor (empty for first page).
+# Fetch one page of $1 (GraphQL query). $2 = cursor (empty for first page).
 gh_page() {
-  local cursor="$1"
+  local query="$1" cursor="$2"
   local owner="${REPO%%/*}" name="${REPO#*/}"
   if [ -n "$cursor" ]; then
     gh api graphql -F owner="$owner" -F name="$name" -F number="$PR_NUMBER" \
-      -F cursor="$cursor" -f query="$GRAPHQL_QUERY" 2>"$ERR_FILE"
+      -F cursor="$cursor" -f query="$query" 2>"$ERR_FILE"
   else
     gh api graphql -F owner="$owner" -F name="$name" -F number="$PR_NUMBER" \
-      -f query="$GRAPHQL_QUERY" 2>"$ERR_FILE"
+      -f query="$query" 2>"$ERR_FILE"
   fi
 }
 
@@ -138,46 +147,64 @@ blocker_summary() {
   printf '%s' "$VERDICT_JSON" | jq -r '[.blockers[] | "\(.id) (\(.priority), \(.path):\(.line))"] | join("; ")'
 }
 
-# One poll round. Sets STATUS, VERDICT_JSON, LAST_ERROR. Always returns 0.
-poll_once() {
-  local cursor="" page pr_json page_threads has_next
-  printf '[]\n' >"$THREADS_FILE"
-  printf '[]\n' >"$REVIEWS_FILE"
+# Fetch every page of one PR connection into $3 as a JSON array. $1 = query,
+# $2 = connection field name. On failure sets LAST_ERROR and returns 1.
+fetch_connection() {
+  local query="$1" connection="$2" out_file="$3"
+  local cursor="" page pr_json has_next
+  if ! printf '[]\n' >"$out_file"; then
+    LAST_ERROR="failed to initialize connection file"
+    return 1
+  fi
   while :; do
     : >"$ERR_FILE"
-    if ! page="$(gh_page "$cursor")"; then
+    if ! page="$(gh_page "$query" "$cursor")"; then
       LAST_ERROR="$(cat "$ERR_FILE" 2>/dev/null || echo 'gh exited non-zero')"
-      STATUS="PENDING"
-      return 0
+      return 1
     fi
     if ! pr_json="$(printf '%s' "$page" | jq '.data.repository.pullRequest')"; then
       LAST_ERROR="unparseable GraphQL response"
-      STATUS="PENDING"
-      return 0
+      return 1
     fi
     if [ "$pr_json" = "null" ]; then
       LAST_ERROR="$(printf '%s' "$page" | jq -c '.errors // "pull request not found in response"')"
-      STATUS="PENDING"
-      return 0
+      return 1
     fi
-    page_threads="$(printf '%s' "$pr_json" | jq '.reviewThreads.nodes // []')"
-    printf '%s' "$page_threads" >"$PAGE_FILE"
-    jq -s 'add' "$THREADS_FILE" "$PAGE_FILE" >"$WORK_DIR/merged.json"
-    mv "$WORK_DIR/merged.json" "$THREADS_FILE"
-    if [ -z "$cursor" ]; then
-      printf '%s' "$pr_json" | jq '.reviews.nodes // []' >"$REVIEWS_FILE"
+    if ! printf '%s' "$pr_json" | jq --arg c "$connection" '.[$c].nodes // []' >"$PAGE_FILE"; then
+      LAST_ERROR="unparseable GraphQL response"
+      return 1
     fi
-    has_next="$(printf '%s' "$pr_json" | jq -r '.reviewThreads.pageInfo.hasNextPage // false')"
+    if ! jq -s 'add' "$out_file" "$PAGE_FILE" >"$WORK_DIR/merged.json" ||
+      ! mv "$WORK_DIR/merged.json" "$out_file"; then
+      LAST_ERROR="failed to merge connection pages"
+      return 1
+    fi
+    if ! has_next="$(printf '%s' "$pr_json" | jq -r --arg c "$connection" '.[$c].pageInfo.hasNextPage // false')"; then
+      LAST_ERROR="unparseable GraphQL response"
+      return 1
+    fi
     if [ "$has_next" != "true" ]; then
       break
     fi
-    cursor="$(printf '%s' "$pr_json" | jq -r '.reviewThreads.pageInfo.endCursor // empty')"
+    if ! cursor="$(printf '%s' "$pr_json" | jq -r --arg c "$connection" '.[$c].pageInfo.endCursor // empty')"; then
+      LAST_ERROR="unparseable GraphQL response"
+      return 1
+    fi
     if [ -z "$cursor" ]; then
       LAST_ERROR="hasNextPage without endCursor"
-      STATUS="PENDING"
-      return 0
+      return 1
     fi
   done
+  return 0
+}
+
+# One poll round. Sets STATUS, VERDICT_JSON, LAST_ERROR. Always returns 0.
+poll_once() {
+  if ! fetch_connection "$THREADS_QUERY" reviewThreads "$THREADS_FILE" ||
+    ! fetch_connection "$REVIEWS_QUERY" reviews "$REVIEWS_FILE"; then
+    STATUS="PENDING"
+    return 0
+  fi
   if ! VERDICT_JSON="$(derive_verdict)"; then
     LAST_ERROR="verdict computation failed"
     STATUS="PENDING"
