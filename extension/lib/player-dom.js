@@ -199,6 +199,14 @@ function findPlayButton(doc) {
 // "ad-type-ad" while an ad plays. The ad bar swap also renders the v2 widget.
 // Use either signal so a stale track anchor can never resurrect an ad segment.
 export function readAdType(doc) {
+  // Check the v2 widget first and independently: it can appear while the
+  // bar still shows ad-type-none with stale track UI, and that state must
+  // read as an ad, never as music.
+  try {
+    if (doc.querySelector(SELECTORS.adWidget)) return "ad";
+  } catch (e) {
+    return null;
+  }
   let bar = null;
   try {
     bar = doc.querySelector(SELECTORS.adBar);
@@ -208,11 +216,6 @@ export function readAdType(doc) {
   if (bar) {
     const value = attrOf(bar, "data-testadtype");
     if (value) return value === "ad-type-none" ? null : value;
-  }
-  try {
-    if (doc.querySelector(SELECTORS.adWidget)) return "ad";
-  } catch (e) {
-    return null;
   }
   return null;
 }

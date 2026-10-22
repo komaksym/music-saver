@@ -8,7 +8,7 @@ set -euo pipefail
 
 HEAD_SHA="${1:?usage: check-ready-rollup.sh HEAD_SHA [REPO] [TIMEOUT_SECONDS]}"
 REPO="${2:-komaksym/music-saver}"
-TIMEOUT="${3:-720}"
+TIMEOUT="${3:-900}"
 REQUIRED="ci pr-title pr-hygiene commit-lint"
 
 deadline=$((SECONDS + TIMEOUT))

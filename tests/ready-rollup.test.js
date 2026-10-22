@@ -99,8 +99,8 @@ const run = (id, fields) => ({ id, head_sha: head, ...fields });
 test("a newer in-progress rerun outranks an older success", { skip: jqSkip }, async () => {
   const result = await runRollupRuns({
     ci: [
-      run(11, { status: "completed", conclusion: "success", completed_at: "2026-10-22T10:00:00Z" }),
       run(12, { status: "in_progress", conclusion: null, completed_at: null }),
+      run(11, { status: "completed", conclusion: "success", completed_at: "2026-10-22T10:00:00Z" }),
     ],
   });
   assert.equal(result.status, 1, result.stdout);

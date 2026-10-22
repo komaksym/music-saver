@@ -4,6 +4,7 @@ import { WatchLoop } from "../extension/content.js";
 import {
   readTrack,
   readPlayback,
+  readAdType,
   readLikeHint,
   extractTrackId,
   parseTimeToMs,
@@ -281,6 +282,15 @@ test("the live ad widget replaces the track widget", () => {
   });
   assert.equal(readPlayback(doc, 0).kind, "ad");
   assert.equal(readTrack(doc), null);
+});
+
+test("the ad widget wins when the bar still shows ad-type-none", () => {
+  const { doc } = fakePlayer({
+    adType: "ad-type-none",
+    adWidget: true,
+  });
+  assert.equal(readAdType(doc), "ad");
+  assert.equal(readPlayback(doc, 0).kind, "ad");
 });
 
 test("helpers parse ids and times", () => {

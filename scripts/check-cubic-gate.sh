@@ -143,7 +143,10 @@ derive_verdict() {
         | (($checks[0] // []) | map(
             select(.status == "completed" and .conclusion == "success")
             | select((.app.slug // "") as $s | ($slugs_arr | index($s)) != null)
-          ) | map(.completed_at // ""))) as $check_times
+            # Freshness uses started_at, not completed_at: a review that
+            # started before the cutoff but finished after it reviewed the
+            # old diff, so it must not count (retarget race).
+          ) | map(.started_at // ""))) as $check_times
     | (([$cubic[] | .created] + $review_times + $check_times)
         | map(select(length > 0 and ($rs == null or . >= $rs)))
         | length) as $fresh_count
@@ -241,6 +244,25 @@ poll_once() {
     return 0
   fi
   STATUS="$(printf '%s' "$VERDICT_JSON" | jq -r '.status')"
+  # TOCTOU guard: threads were fetched before reviews/check-runs, so a P1
+  # thread created between those reads would miss the blocker snapshot
+  # while its review counts as a fresh signal. Re-fetch threads and
+  # re-derive before allowing CLEAR.
+  if [ "$STATUS" = "CLEAR" ]; then
+    if ! fetch_connection "$THREADS_QUERY" reviewThreads "$THREADS_FILE"; then
+      STATUS="PENDING"
+      return 0
+    fi
+    if ! VERDICT_JSON="$(derive_verdict)"; then
+      LAST_ERROR="verdict computation failed"
+      STATUS="PENDING"
+      return 0
+    fi
+    STATUS="$(printf '%s' "$VERDICT_JSON" | jq -r '.status')"
+  fi
+  if [ "$STATUS" = "CLEAR" ] || [ "$STATUS" = "BLOCKED" ]; then
+    LAST_ERROR=""
+  fi
   return 0
 }
 
