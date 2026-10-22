@@ -3,9 +3,9 @@
 The one supported browser harness is `scripts/e2e-agent-browser.sh`
 (auth, cookies-export, cookies-restore, smoke, player). It drives the
 unpacked `extension/` through agent-browser with one stable session and
-one persistent Chrome profile. Every browser call goes through the same
-wrapper with identical flags, so login state is never stranded in a
-differently launched browser.
+one persistent Chrome profile. Workflow stages use separate sessions to
+avoid daemon handoff races. Every browser call within a stage goes through
+the same wrapper with identical flags, so login state stays in the profile.
 
 Never add Playwright, Puppeteer, Selenium, Cypress, or WebDriver.
 `scripts/check-browser-stack.sh` fails the build when they appear, and

@@ -10,7 +10,10 @@ ART="${E2E_ARTIFACTS:-$ROOT/e2e-artifacts}"
 SESSION="${E2E_SESSION:-}"
 
 close_quiet() {
-  [ -z "$SESSION" ] || agent-browser --session "$SESSION" close >/dev/null 2>&1 || true
+  if [ -n "$SESSION" ]; then
+    agent-browser --session "$SESSION" close >/dev/null 2>&1 || true
+    sleep 1
+  fi
 }
 trap close_quiet EXIT
 

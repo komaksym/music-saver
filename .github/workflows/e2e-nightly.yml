@@ -35,9 +35,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes xvfb
       - name: Install agent-browser
-        run: npm install -g agent-browser && agent-browser install --with-deps
+        run: npm install -g agent-browser@0.38.2 && agent-browser install --with-deps
       - name: Restore Spotify cookies
         env:
+          E2E_SESSION: ms-e2e-restore-${{ github.run_id }}
           SPOTIFY_E2E_COOKIES_B64: ${{ secrets.SPOTIFY_E2E_COOKIES_B64 }}
         shell: bash
         run: |
@@ -50,10 +51,16 @@ jobs:
           chmod 600 tests/e2e-auth-state/cookies.json
           bash scripts/e2e-agent-browser.sh cookies-restore
       - name: Run E2E smoke (headless)
+        env:
+          E2E_SESSION: ms-e2e-smoke-${{ github.run_id }}
         run: bash scripts/e2e-agent-browser.sh smoke
       - name: Run E2E player proof (Xvfb)
+        env:
+          E2E_SESSION: ms-e2e-player-${{ github.run_id }}
         run: xvfb-run --auto-servernum bash scripts/e2e-agent-browser.sh player
       - name: Run scenario matrix (Xvfb)
+        env:
+          E2E_SESSION: ms-e2e-matrix-${{ github.run_id }}
         run: xvfb-run --auto-servernum bash scripts/e2e-matrix.sh
       - name: Upload E2E artifacts
         if: always()

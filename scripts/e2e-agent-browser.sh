@@ -26,6 +26,7 @@ ab_ext() {
 }
 close_quiet() {
   ab close >/dev/null 2>&1 || true
+  sleep 1
 }
 cleanup() {
   [ -z "$RAW_OPEN" ] || rm -f "$RAW_OPEN"
