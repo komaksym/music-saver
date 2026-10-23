@@ -1,0 +1,7 @@
+[
+  {"track": "seed-liked-long", "startLiked": true, "listenPlan": "full", "expectedDelta": "none", "cleanup": "none", "automation": "unproven"},
+  {"track": "seed-unliked-long", "startLiked": false, "listenPlan": "full", "expectedDelta": "save", "cleanup": "unlike", "automation": "scenario", "spotifyUri": "spotify:track:7LoBfKLpz4BGrxCuOzAKRz"},
+  {"track": "seed-unliked-short", "startLiked": false, "listenPlan": "partial", "expectedDelta": "none", "cleanup": "none", "automation": "unproven"},
+  {"track": "seed-unliked-seek-pause", "startLiked": false, "listenPlan": "seek-pause", "expectedDelta": "none", "cleanup": "none", "automation": "unproven"},
+  {"track": "seed-ad-break", "startLiked": false, "listenPlan": "ad-break", "expectedDelta": "none", "cleanup": "none", "automation": "unproven"}
+]

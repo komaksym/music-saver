@@ -2,3 +2,6 @@
 *.zip
 .audit/
 .audit/
+tests/e2e-auth-state/
+tests/e2e-profile/
+e2e-artifacts/

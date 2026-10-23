@@ -1,0 +1,96 @@
+name: e2e-nightly
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/e2e-nightly.yml
+      - docs/e2e.md
+      - extension/**
+      - scripts/check-browser-stack.sh
+      - scripts/e2e-agent-browser.sh
+      - scripts/e2e-cookies.mjs
+      - scripts/e2e-matrix.json
+      - scripts/e2e-matrix.sh
+      - scripts/e2e-proof.sh
+      - tests/browser-stack.test.js
+      - tests/e2e-cookies.test.js
+  schedule:
+    - cron: "17 3 * * *"
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: e2e-smoke-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install agent-browser
+        run: npm install -g agent-browser@0.38.2 && agent-browser install --with-deps
+      - name: Run E2E smoke (headless)
+        env:
+          E2E_SESSION: ms-e2e-smoke-${{ github.run_id }}
+        run: bash scripts/e2e-agent-browser.sh smoke
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: e2e-smoke-${{ github.run_id }}
+          path: e2e-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
+  live:
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: e2e-nightly-live
+      cancel-in-progress: false
+    env:
+      E2E_REQUIRE_AUTH: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes xvfb
+      - name: Install agent-browser
+        run: npm install -g agent-browser@0.38.2 && agent-browser install --with-deps
+      - name: Restore Spotify cookies
+        env:
+          E2E_SESSION: ms-e2e-restore-${{ github.run_id }}
+          SPOTIFY_E2E_COOKIES_B64: ${{ secrets.SPOTIFY_E2E_COOKIES_B64 }}
+        shell: bash
+        run: |
+          mkdir -p tests/e2e-auth-state
+          if [ -z "$SPOTIFY_E2E_COOKIES_B64" ]; then
+            echo "SPOTIFY_E2E_COOKIES_B64 is not configured" >&2
+            exit 1
+          fi
+          printf '%s' "$SPOTIFY_E2E_COOKIES_B64" | base64 --decode > tests/e2e-auth-state/cookies.json
+          chmod 600 tests/e2e-auth-state/cookies.json
+          bash scripts/e2e-agent-browser.sh cookies-restore
+      - name: Run E2E player proof (Xvfb)
+        env:
+          E2E_SESSION: ms-e2e-player-${{ github.run_id }}
+        run: xvfb-run --auto-servernum bash scripts/e2e-agent-browser.sh player
+      - name: Run scenario matrix (Xvfb)
+        env:
+          E2E_SESSION: ms-e2e-matrix-${{ github.run_id }}
+        run: xvfb-run --auto-servernum bash scripts/e2e-matrix.sh
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: e2e-nightly-${{ github.run_id }}
+          path: e2e-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
