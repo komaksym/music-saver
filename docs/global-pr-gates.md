@@ -62,8 +62,12 @@ The final metadata reread reduces one race but cannot remove these platform limi
 
 The ported smoke job is a browser reachability check. It opens a public page headless and saves a snapshot.
 It does not run the player or the scenario matrix, so it does not prove that the extension saves a track.
-Those stages stay on PR8 and on the nightly path. A required smoke run costs about 30 seconds
-per pull request, measured from PR8 run `39988078459`.
+Those stages stay on PR8 and on the nightly path.
+
+A required smoke run costs one hosted runner per pull request. The browser install took 4 minutes
+35 seconds on the ported workflow's first run (`40040397889`). PR8's install step took 17 seconds
+on `39988078459`, so the cost depends on whether the runner image already carries the browser.
+Account for this cost before the user chooses the enforcement target.
 
 Personal repositories cannot use organization-required workflows.
 A dedicated App can provide an independent verdict identity, but creating one is outside this checkpoint.
