@@ -3,6 +3,12 @@ name: pr-title
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
+  workflow_call:
+    inputs:
+      title:
+        description: PR title to lint
+        required: true
+        type: string
 
 permissions:
   pull-requests: read
@@ -14,7 +20,7 @@ jobs:
     steps:
       - name: Lint PR title
         env:
-          TITLE: ${{ github.event.pull_request.title }}
+          TITLE: ${{ github.event.pull_request.title || inputs.title }}
         run: |
           echo "PR title: $TITLE"
           if ! printf '%s' "$TITLE" | grep -Eq '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?(!)?: .+'; then

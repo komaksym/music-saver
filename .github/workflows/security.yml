@@ -3,12 +3,37 @@ name: security
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
+  workflow_call:
+    inputs:
+      repo:
+        description: Owner/repo to scan
+        required: false
+        default: ''
+        type: string
+      base_sha:
+        description: Base SHA for secret scanning
+        required: true
+        type: string
+      head_sha:
+        description: Head SHA for secret scanning
+        required: true
+        type: string
+      pr_number:
+        description: PR number under scan
+        required: false
+        default: ''
+        type: string
+      advanced_security:
+        description: Enable zizmor advanced-security submission
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: security-${{ github.event.pull_request.number }}
+  group: security-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
@@ -22,6 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ${{ inputs.repo || github.repository }}
           persist-credentials: false
       - uses: reviewdog/action-actionlint@8bacd0b6ac20de8f143bda009d7c86f263c06bd1 # v1.80.5
         with:
@@ -36,12 +62,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ${{ inputs.repo || github.repository }}
           fetch-depth: 0
           persist-credentials: false
       - uses: trufflesecurity/trufflehog@c85580b712841eda4c53bc28fc6ace6100e8c16c # v3.99.4
         with:
-          base: ${{ github.event.pull_request.base.sha }}
-          head: ${{ github.event.pull_request.head.sha }}
+          base: ${{ github.event.pull_request.base.sha || inputs.base_sha }}
+          head: ${{ github.event.pull_request.head.sha || inputs.head_sha }}
           extra_args: --results=verified,unknown
 
   zizmor:
@@ -53,7 +80,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ${{ inputs.repo || github.repository }}
           persist-credentials: false
       - uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
         with:
-          advanced-security: ${{ github.event.pull_request.head.repo.fork == false }}
+          advanced-security: ${{ inputs.advanced_security || github.event.pull_request.head.repo.fork == false }}
