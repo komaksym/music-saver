@@ -39,9 +39,10 @@ esac
 ctx=""
 for a in "$@"; do
   case "$a" in
-    check_name=*) ctx="\${a#check_name=}" ;;
+    *check_name=*) ctx="\${a##*check_name=}"; ctx="\${ctx%%&*}" ;;
   esac
 done
+ctx=\$(printf '%b' "\${ctx//%/\\x}")
 if [ -z "$ctx" ]; then echo success; exit 0; fi
 ${arms || "if true; then echo success;"}
 else echo success; fi
@@ -130,11 +131,12 @@ filter=""
 ctx=""
 for a in "$@"; do
   case "$a" in
-    check_name=*) ctx="\${a#check_name=}" ;;
+    *check_name=*) ctx="\${a##*check_name=}"; ctx="\${ctx%%&*}" ;;
   esac
   if [ "$prev" = "--jq" ]; then filter="$a"; fi
   prev="$a"
 done
+ctx=\$(printf '%b' "\${ctx//%/\\x}")
 if [ -z "$ctx" ]; then echo success; exit 0; fi
 file=""
 ${arms.join("\n")}

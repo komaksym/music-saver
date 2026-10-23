@@ -35,9 +35,10 @@ while true; do
   failed=()
   for ctx in "${REQUIRED[@]}"; do
     # Newest run for this head wins, even when it is still running: an older
-    # success must not mask a rerun that has not finished. -f encodes the
+    # success must not mask a rerun that has not finished. jq @uri-encodes the
     # spaced reviewer name correctly.
-    run=$(GH_HEAD="$HEAD_SHA" gh api "repos/$REPO/commits/$HEAD_SHA/check-runs" -f "check_name=$ctx" -f per_page=50 --jq '[.check_runs[] | select(.head_sha == $ENV.GH_HEAD)] | sort_by(.id) | last | if . == null then "none" elif .status != "completed" then "pending" else (.conclusion // "none") end')
+    enc=$(jq -nr --arg s "$ctx" '$s|@uri')
+    run=$(GH_HEAD="$HEAD_SHA" gh api "repos/$REPO/commits/$HEAD_SHA/check-runs?check_name=$enc&per_page=50" --jq '[.check_runs[] | select(.head_sha == $ENV.GH_HEAD)] | sort_by(.id) | last | if . == null then "none" elif .status != "completed" then "pending" else (.conclusion // "none") end')
     if [ "$run" = "success" ]; then
       continue
     fi
