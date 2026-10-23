@@ -29,6 +29,8 @@ jobs:
         run: npm run lint
       - name: Run tests
         run: npm test
+      - name: Validate E2E matrix
+        run: node scripts/e2e-matrix-lib.mjs validate scripts/e2e-matrix.json
       - name: Build content bundle
         run: npm run build
       - name: Syntax-check extension sources
