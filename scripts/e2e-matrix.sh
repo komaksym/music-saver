@@ -172,14 +172,24 @@ JS
   fi
 fi
 
+ab_ext wait --fn "(${PLAY_QUERY})?.getAttribute('aria-label') === 'Play' || (${PLAY_QUERY})?.getAttribute('aria-label') === 'Pause'"
 PLAY_LABEL=$(ab_ext eval "(${PLAY_QUERY})?.getAttribute('aria-label')")
-if printf '%s' "$PLAY_LABEL" | grep -Fq Play; then
+if printf '%s' "$PLAY_LABEL" | grep -Fq Pause; then
   ab_ext click '[data-testid="control-button-playpause"]'
+  ab_ext wait --fn "(${PLAY_QUERY})?.getAttribute('aria-label') === 'Play'"
 fi
+ab_ext click '[data-testid="control-button-playpause"]'
 ab_ext wait --fn "(${PLAY_QUERY})?.getAttribute('aria-label') === 'Pause'"
+ab_ext wait --fn "Number(document.querySelector('[data-testid=playback-progressbar] input')?.value) > 1000"
 echo "scenario $SCENARIO_NAME: playing $TRACK_URL with threshold override"
 
-ab_ext wait --fn "(${TOAST_QUERY}) !== null && (${LIKE_QUERY})?.getAttribute('aria-checked') === 'true'"
+if ! ab_ext wait --fn "(${TOAST_QUERY}) !== null && (${LIKE_QUERY})?.getAttribute('aria-checked') === 'true'"; then
+  ab_ext screenshot "$ART/matrix-timeout.png" || true
+  ab_ext snapshot -i > "$ART/matrix-timeout-snapshot.txt" || true
+  ab_ext errors > "$ART/matrix-errors.txt" || true
+  echo "extension save did not appear before the wait timeout" >&2
+  exit 11
+fi
 TOAST_TEXT=$(ab_ext eval "(${TOAST_QUERY})?.textContent")
 printf '%s\n' "$TOAST_TEXT" > "$ART/matrix-toast.txt"
 if ! printf '%s' "$TOAST_TEXT" | grep -Fq 'saved to Liked Songs'; then
