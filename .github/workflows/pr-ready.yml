@@ -8,6 +8,7 @@ permissions:
   contents: read
   checks: read
   statuses: read
+  actions: read
 
 jobs:
   ready:
@@ -22,4 +23,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: bash scripts/check-ready-rollup.sh "$HEAD_SHA"
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: bash scripts/check-ready-rollup.sh "$HEAD_SHA" "$GITHUB_REPOSITORY" 720 "$PR_NUMBER"

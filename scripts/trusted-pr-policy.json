@@ -5,11 +5,15 @@
     ".github/workflows/pr-title.yml": ["1252b2c064434bd3254b8d0a6b2b209a12254ec39c4f6f39c6db4bdbfd8bddf7"],
     ".github/workflows/pr-hygiene.yml": ["5d96d5f6681dc4fd5d70f5aaa2e08a29c750e1704355c1ff0bc959f8e1261716"],
     ".github/workflows/commit-lint.yml": ["a495d83687735b5f793e4d143dcf479c756553be6750b07ce96bfcc00d44a565"],
-    ".github/workflows/pr-ready.yml": ["30fc8759c2d11cb3fbcaa3c713b729ea1620f7979c8cbdffcf9e3bc292b57841"],
+    ".github/workflows/pr-ready.yml": ["1bc720f2966ff6870f6722a01b8896d0493a81290d496e983d951da5f24fbe7e"],
     ".github/workflows/cubic-gate.yml": ["ec88b2c03b3d82199a8c384f9d9154ef3941e87dd7f740b5273a536b0d9326fb"],
     ".github/workflows/security.yml": ["4981b55a5403cb84ffd7fd6464a06e9ad98baa5e15def3bfc36047b85c86a9a1"],
+    ".github/workflows/e2e-smoke.yml": ["b19689f2a83cfaeaed658fe1df3efbfb7f5025df44610c28ff3cf47908a7e190"],
     "scripts/check-cubic-gate.sh": ["aac2d893b4f1a845c438229cae073cd278b8731fca5cca9ba5c5bc8a5a686a47"],
-    "scripts/check-ready-rollup.sh": ["1d59723ae183682d500e229766ccfbcb2dafeefe3a5146ccb505601db9ff3c52"]
+    "scripts/check-ready-rollup.sh": ["4d852eff9b8e41095420ac95b00dd23a78ba43e29ccc611596548642cf4eef33"],
+    "scripts/e2e-agent-browser.sh": ["5bc0058d78b9a4cba318c6ec46232e7070c60bcacd26cca8c64cf79fd571b598"],
+    "scripts/e2e-cookies.mjs": ["00c4e45cc393e4d4d1c5cad48c43d2293819e776e36abaa1a07a0eeded312389"],
+    "scripts/e2e-harness.sh": ["ea0c719ac4afffc90e05f0759dbd224eccc508581ee55b9ed0f4b75c845783e6"]
   },
   "scripts": {
     "lint": "eslint extension scripts",
@@ -27,6 +31,7 @@
     { "context": "actionlint", "app": 15368, "path": ".github/workflows/security.yml" },
     { "context": "trufflehog", "app": 15368, "path": ".github/workflows/security.yml" },
     { "context": "zizmor", "app": 15368, "path": ".github/workflows/security.yml" },
+    { "context": "smoke", "app": 15368, "path": ".github/workflows/e2e-smoke.yml" },
     { "context": "cubic · AI code reviewer", "app": 1082092 }
   ]
 }

@@ -20,6 +20,8 @@ Do not merge or activate until an independent reviewer approves the exact deploy
 2. Add a metadata-only verifier and deployment workflow. Never execute PR code with its write token.
    Document that Actions-owned check names cannot provide an independent trust anchor.
    Require a dedicated App verdict or organization-required workflows before claiming tamper-proof global enforcement.
+   Port PR8's secretless PR smoke job and the scripts it runs. Require `smoke` in the manifest and the ready rollup.
+   Read pull-request runs only, so a newer push run cannot satisfy or reject the rollup.
 3. Verify locally and open a deployment PR against `main`. Preserve the remote ruleset snapshot.
 4. After reviewed deployment, activate the additional trusted context and all-branch scope, then read back the API state.
 

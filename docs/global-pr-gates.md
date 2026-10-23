@@ -7,10 +7,19 @@ Ruleset `25511836` remains unchanged and targets only the default branch.
 No remote ruleset has been created or edited. No PR has been merged.
 The nightly-only `live` job is not a required check.
 
+The candidate ports PR8's secretless pull-request `smoke` job as
+`.github/workflows/e2e-smoke.yml`. PR8's nightly `live` job, its matrix executor,
+and its cookie restore path are not ported. `live` stays out of every required set.
+The ported smoke workflow drops PR8's `paths` filter and runs on every pull request.
+A required status check must exist on every pull-request head. GitHub keeps the checks
+of a skipped workflow pending, so a path-filtered workflow cannot become a required
+check ([workflow trigger docs](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)).
+PR8 does not require `smoke` today. This candidate proposes it as an additional context.
+
 The deployment ports PR8 gate workflows and direct CI dependencies from commit
 `0bca59ec0d030ab3c1e33167ea857c98c8f03c82`. It does not port PR8's player change.
 PR18 remains a separate proposal. Its reusable workflow changes require a later policy approval.
-The candidate manifest pins PR8 file hashes. These hashes still require independent review before deployment.
+The candidate manifest pins the approved file hashes. These hashes still require independent review before deployment.
 
 ## What the candidate validates
 
@@ -23,16 +32,21 @@ The verifier checks these rules:
 - The PR is open, not draft, and has a Conventional Commit title.
 - The five PR8 headings appear outside fenced code. Empty or duplicate sections are not new failures.
 - Nonmerge commits have Conventional Commit subjects and nonempty bodies.
-- Required workflow files and two gate scripts match the candidate manifest.
+- Required workflow files and five supporting scripts match the candidate manifest.
 - Package script commands match PR8.
 - Checks have the required App identity and current head SHA.
 - Actions results belong to the expected repository, workflow path, PR, and permitted event.
-- The newest eligible PR workflow run and attempt must succeed. A newer push run cannot hide it.
+- The newest eligible PR workflow run and attempt must succeed. A newer push run on the
+  same head cannot hide it and cannot reject it.
+- The `ready` rollup reads `ci`, `pr-title`, `pr-hygiene`, `commit-lint`, and `smoke`.
+  It reads the newest pull-request run and attempt first, then that attempt's named check.
+  It never waits on its own context.
+- The ported smoke job runs headless and secretless. It needs no login and no repository secret.
 - Lists are paginated. Unreadable responses, incomplete commit lists, and metadata changes during evaluation fail closed.
 
 The body headings are `Summary`, `Validation`, `Risks / Notes`, `Breaking changes`, and `Visual summary`.
-The ten supporting contexts remain `ci`, `pr-title`, `ready`, `pr-hygiene`, `commit-lint`,
-`cubic-gate`, `actionlint`, `trufflehog`, `zizmor`, and `cubic · AI code reviewer`.
+The eleven supporting contexts are `ci`, `pr-title`, `ready`, `pr-hygiene`, `commit-lint`,
+`cubic-gate`, `actionlint`, `trufflehog`, `zizmor`, `smoke`, and `cubic · AI code reviewer`.
 
 ## Limits that block remote activation
 
@@ -45,6 +59,11 @@ It checks head files, not the tested merge tree.
 GitHub commit statuses belong to SHAs, not individual PRs. PRs with the same head SHA share status state.
 Body edits do not change that SHA. Event delays, cancellation, and concurrent metadata edits can leave a stale verdict.
 The final metadata reread reduces one race but cannot remove these platform limits.
+
+The ported smoke job is a browser reachability check. It opens a public page headless and saves a snapshot.
+It does not run the player or the scenario matrix, so it does not prove that the extension saves a track.
+Those stages stay on PR8 and on the nightly path. A required smoke run costs about 30 seconds
+per pull request, measured from PR8 run `39988078459`.
 
 Personal repositories cannot use organization-required workflows.
 A dedicated App can provide an independent verdict identity, but creating one is outside this checkpoint.
@@ -65,6 +84,7 @@ Keep the current main protections unchanged while the user selects the intended 
 2. Review the exact deployment head independently. Run all required checks without bypass.
 3. Merge only after the exact-head checks and review pass. This draft is not merge-ready.
 4. Exercise main-target, stacked-target, fork, metadata-edit, and same-head PR canaries after deployment.
+   Include a documentation-only PR, which must still receive `smoke` on its head.
 5. Confirm workflow source selection from actual run evidence, not only event documentation.
 6. Test wrong workflow names, newer push runs, pending PR reruns, weak scripts, and stale verdict rejection.
 7. Only then consider a separate check-only ruleset for approved integration targets.
@@ -80,3 +100,4 @@ The target workflow has a narrowly documented `dangerous-triggers` lint exceptio
 - [Available rules](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
 - [Organization rulesets and required workflows](https://docs.github.com/en/organizations/managing-organization-settings/creating-rulesets-for-repositories-in-your-organization)
 - [Workflow event contexts](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target)
+- [Trigger a workflow](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
