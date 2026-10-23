@@ -276,8 +276,70 @@ test("manual retry executes while the same track keeps playing", async () => {
   }
   await flush();
   assert.equal(saveCalls, 2);
-  assert.deepEqual(events.map((e) => e.kind), ["fail"]);
+  assert.deepEqual(events.map((e) => e.kind), ["fail", "save"]);
+  assert.equal(events[1].detail, "retry");
+  assert.equal(events[1].trackId, "abc123");
   assert.deepEqual((await chrome.send({ type: "ms-due", nowMs: 600000 })).due, []);
+});
+
+test("a retried removal records undo, so the log matches the library", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  let removeCalls = 0;
+  const { loop, events } = wire(doc, chrome, {
+    likes: {
+      check: async () => "liked",
+      save: async () => ({ ok: true, action: "already-saved" }),
+      remove: async () => (++removeCalls === 1 ? { ok: false, reason: "remove-threw" } : { ok: true, action: "removed" }),
+    },
+  });
+  await loop.undo({ id: "abc123", uri: "spotify:track:abc123", title: "Long Song", artist: "Test Artist" });
+  await flush();
+  assert.deepEqual(events.map((e) => e.kind), ["fail"]);
+  assert.equal(events[0].detail, "remove:remove-threw");
+  assert.deepEqual((await chrome.send({ type: "ms-due", nowMs: 0 })).due.map((i) => [i.id, i.kind]), [["abc123", "remove"]]);
+  clock.now = 10000;
+  doc.state.positionMs = 10000;
+  await loop.tick();
+  await flush();
+  assert.equal(removeCalls, 2);
+  assert.deepEqual(events.map((e) => e.kind), ["fail", "undo"]);
+  assert.equal(events[1].detail, "retry");
+  assert.deepEqual((await chrome.send({ type: "ms-due", nowMs: 600000 })).due, []);
+});
+
+test("a retry that fails again logs no extra event and stays queued", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  let saveCalls = 0;
+  const { loop, events } = wire(doc, chrome, {
+    likes: {
+      check: async () => "unliked",
+      save: async () => { saveCalls += 1; return { ok: false, reason: "dom-changed" }; },
+      remove: async () => ({ ok: true, action: "removed" }),
+    },
+  });
+  await listenThrough(loop, doc, 190000);
+  assert.deepEqual(events.map((e) => e.kind), ["fail"]);
+  for (let t = 200000; t <= 220000; t += 10000) {
+    clock.now = t;
+    doc.state.positionMs = t;
+    await loop.tick();
+  }
+  await flush();
+  assert.equal(saveCalls, 4, "the initial save plus one retry per poll");
+  assert.deepEqual(events.map((e) => e.kind), ["fail"]);
+  const due = await chrome.send({ type: "ms-due", nowMs: 600000 });
+  assert.deepEqual(due.due.map((i) => i.id), ["abc123"]);
+});
+
+test("retry polling is a short interval, so a failed save recovers without a 30s wait", () => {
+  const loop = WatchLoop.create({ doc: fakeDoc(), settings: {}, sendMessage: async () => null });
+  assert.equal(loop.retryPollMs, 5000);
 });
 
 test("disabling settings stops the loop from saving", async () => {

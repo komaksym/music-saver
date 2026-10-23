@@ -24,6 +24,7 @@ export class WatchLoop {
     this.settings = opts.settings;
     this.nowMs = opts.nowMs || (() => Date.now());
     this.pollMs = opts.pollMs || 1000;
+    this.retryPollMs = opts.retryPollMs || 5000;
     this.send = opts.send || null;
     this.timer = null;
     this.busy = false;
@@ -71,7 +72,7 @@ export class WatchLoop {
       this.lastPolledId = sample.track.id;
       this.lastRetryPollMs = now;
       await this.pollRetries(sample.track, now);
-    } else if (now - this.lastRetryPollMs > 30000) {
+    } else if (now - this.lastRetryPollMs > this.retryPollMs) {
       this.lastRetryPollMs = now;
       await this.pollRetries(sample.track, now);
     }
@@ -192,6 +193,10 @@ export class WatchLoop {
         await this.send({ type: "ms-ack", id: intent.id, ok: !!(out && out.ok), nowMs: this.nowMs() });
       } catch (e) {
         // The intent stays queued; the next poll retries it.
+      }
+      if (out && out.ok) {
+        // The retry already changed the library, so the log must show it.
+        this.emit({ kind: intent.kind === "remove" ? "undo" : "save", track, now: this.nowMs(), detail: "retry" });
       }
     }
   }
