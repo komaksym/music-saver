@@ -358,46 +358,68 @@ async function runLive(results) {
     results.push({ id: 'settings', mode: 'settings', status: 'passed', assertions: settingsAssertions });
     console.log('PASS live settings');
 
+    step.phase = 'playback';
+    step.selector = 'playback-progressbar';
+    open(url);
+    ab('wait', '[data-testid="play-button"]');
+    const durationMs = pollUntil(
+      () => evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.max)"),
+      (value) => Number.isFinite(value) && value > 0,
+      'live song duration readable from the progress control',
+    );
+    // The ratio gates must separate inside the measured listen window, so the
+    // suite proves each gate instead of assuming the seed song makes it true.
+    assert(durationMs * 0.01 <= 6000, `song duration ${durationMs}ms cannot prove the reached ratio gate with 15s of playback; choose a seed song of 24s to 600s`);
+    assert(durationMs * 0.95 > 22000, `song duration ${durationMs}ms cannot prove the unreached ratio gate with 15s of playback; choose a seed song of 24s to 600s`);
+    results.push({ id: 'song-duration', mode: 'live', status: 'passed', durationMs, assertions: [{ check: 'duration-ms', expected: '>0 and 16s..600s', observed: durationMs, ok: true }] });
+    console.log(`PASS live song duration ${durationMs}ms`);
+
     for (const startLiked of [false, true]) {
-      for (const reached of [false, true]) {
-        step.phase = 'precondition';
-        step.scenario = `${startLiked ? 'liked' : 'unliked'}-${reached ? 'reached' : 'below'}`;
-        step.selector = 'now-playing-like-control';
-        configure({ enabled: false, thresholdRatio: 0.01, minSoundedMs: 60000 });
-        open(url);
-        ab('wait', likeButton);
-        await liked(startLiked);
-        assert.equal(await liked(null), startLiked, 'live precondition');
-        // A fresh content-script document prevents sounded credit leaking across cases.
-        step.phase = 'playback';
-        step.selector = 'play-button';
-        configure({ enabled: true, thresholdRatio: reached ? 0.01 : 1, minSoundedMs: reached ? 6000 : 3600000 });
-        open(url);
-        ab('wait', '[data-testid="play-button"]');
-        const paused = evaluate("document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')!=='Pause'");
-        if (paused) ab('click', '[data-testid="play-button"]');
-        step.selector = 'now-playing-progress';
-        ab('wait', '--fn', `!!document.querySelector('[data-testid="now-playing-widget"] a[href*="${track}"]') && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label')==='Pause'`);
-        const startPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
-        assert(Number.isFinite(startPosition), 'live progress control readable');
-        wait(reached ? 15000 : 4000);
-        const endPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
-        assert(endPosition > startPosition + (reached ? 6000 : 1000), 'live song really progressed');
-        step.phase = 'assertion';
-        step.selector = 'liked-state';
-        const after = await liked(null);
-        const name = `${startLiked ? 'liked' : 'unliked'}-${reached ? 'reached' : 'below'}`;
-        const shot = relative(root, screenshot(name));
-        const observed = events();
-        const expected = reached ? (startLiked ? 'skip' : 'save') : null;
-        const assertions = [];
-        check(assertions, 'progress-ms', true, endPosition - startPosition > (reached ? 6000 : 1000));
-        check(assertions, 'liked-state', startLiked || reached, after);
-        check(assertions, 'activity-log', expected ? [expected] : [], observed.recent.map((event) => event.kind));
-        check(assertions, 'retry-queue', 0, observed.pending.length);
-        assertions.push({ check: 'screenshot', path: shot, ok: true });
-        results.push({ id: name, mode: 'live', status: 'passed', startLiked, progressMs: endPosition - startPosition, assertions });
-        console.log(`PASS live ${name}`);
+      for (const ratioReached of [false, true]) {
+        for (const floorReached of [false, true]) {
+          const name = `${startLiked ? 'liked' : 'unliked'}-ratio-${ratioReached}-floor-${floorReached}`;
+          step.phase = 'precondition';
+          step.scenario = name;
+          step.selector = 'now-playing-like-control';
+          configure({ enabled: false, thresholdRatio: 0.01, minSoundedMs: 60000 });
+          open(url);
+          ab('wait', likeButton);
+          await liked(startLiked);
+          assert.equal(await liked(null), startLiked, `${name}: live precondition`);
+          // A fresh content-script document prevents sounded credit leaking across cases.
+          step.phase = 'playback';
+          step.selector = 'now-playing-progress';
+          configure({ enabled: true, thresholdRatio: ratioReached ? 0.01 : 0.95, minSoundedMs: floorReached ? 6000 : 3600000 });
+          open(url);
+          ab('wait', '[data-testid="play-button"]');
+          const paused = evaluate("document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')!=='Pause'");
+          if (paused) ab('click', '[data-testid="play-button"]');
+          ab('wait', '--fn', `!!document.querySelector('[data-testid="now-playing-widget"] a[href*="${track}"]') && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label')==='Pause'`);
+          const startPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
+          assert(Number.isFinite(startPosition), `${name}: live progress control readable`);
+          wait(15000);
+          step.phase = 'assertion';
+          step.selector = 'liked-state';
+          const endPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
+          const progressMs = endPosition - startPosition;
+          const thresholdMs = Math.max(durationMs * (ratioReached ? 0.01 : 0.95), floorReached ? 6000 : 3600000);
+          const eligible = ratioReached && floorReached;
+          const expected = eligible ? (startLiked ? 'skip' : 'save') : null;
+          const after = await liked(null);
+          const shot = relative(root, screenshot(name));
+          const observed = events();
+          const assertions = [];
+          check(assertions, 'measured-progress', true, progressMs > 0);
+          check(assertions, 'ratio-gate', ratioReached, progressMs >= durationMs * 0.01);
+          check(assertions, 'floor-gate', floorReached, progressMs >= 6000);
+          check(assertions, 'gate-threshold', eligible, progressMs >= thresholdMs);
+          check(assertions, 'liked-state', startLiked || eligible, after);
+          check(assertions, 'activity-log', expected ? [expected] : [], observed.recent.map((event) => event.kind));
+          check(assertions, 'retry-queue', 0, observed.pending.length);
+          assertions.push({ check: 'screenshot', path: shot, ok: true });
+          results.push({ id: name, mode: 'live', status: 'passed', startLiked, ratioReached, floorReached, durationMs, thresholdMs, progressMs, assertions });
+          console.log(`PASS live ${name} progress=${progressMs}ms threshold=${Math.round(thresholdMs)}ms`);
+        }
       }
     }
   } catch (error) {

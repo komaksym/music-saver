@@ -99,7 +99,7 @@ jobs:
             console.error(JSON.stringify({ passed: proof.passed, cleanupError: proof.cleanupError, failures, badChecks }, null, 2));
             throw Error('Live Spotify browser proof failed. A missing session, unsupported playback, or a changed selector is a failure, never a skip.');
           }
-          if (proof.scenarioCount < 5) throw Error(`Expected at least 5 live entries, found ${proof.scenarioCount}`);
+          if (proof.scenarioCount < 10) throw Error(`Expected at least 10 live entries, found ${proof.scenarioCount}`);
           for (const entry of proof.results) console.log(`${entry.id}: ${entry.assertions.length} assertions`);
           console.log(`Live proof ok: ${proof.scenarioCount} entries, bundle ${proof.bundleSha256}, ${proof.agentBrowser}`);
           JS

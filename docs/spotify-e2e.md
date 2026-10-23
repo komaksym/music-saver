@@ -32,13 +32,17 @@ extension key. The content script, background worker, and libraries remain uncha
 The fixture advances its progress against real elapsed time. It does not mock the
 extension clock or replace eligibility logic.
 
-`npm run e2e:live` runs the real extension against a Spotify song. It crosses liked
-and unliked states with reached and unreached settings, and it checks that settings
-survive a write and a reload. It verifies real progress, real Liked Songs state, the
-background log, and an empty retry queue. The reached case uses a six-second floor and
-a one-percent ratio to bound CI time. It does not verify the default 60-second floor
-through live playback. The fixture covers independent ratio and floor limits. Existing
-eligibility unit tests cover the default settings.
+`npm run e2e:live` runs the real extension against a Spotify song. It crosses the full
+liked and unliked by ratio-reached by floor-reached matrix, eight cases, and it checks
+that settings survive a write and a reload. Every case listens for 15 seconds and
+measures the real progress delta. The runner reads the song duration from the progress
+control and proves the ratio gates separate inside that window: a one-percent ratio must
+sit under six seconds, and a 95 percent ratio must sit above 22 seconds. A seed song
+outside 24s to 600s fails loudly instead of claiming a ratio gate it cannot show. Each
+case asserts the ratio gate, the floor gate, and the combined threshold against the
+measured progress. It does not verify the default 60-second floor through live
+playback. The fixture covers independent ratio and floor limits with its own matrix.
+Existing eligibility unit tests cover the default settings.
 
 A live failure records a sanitized blocker: `authentication`, `playback-unsupported`,
 `playback-not-started`, `selector-mismatch`, or `browser-state-unreadable`. The record
