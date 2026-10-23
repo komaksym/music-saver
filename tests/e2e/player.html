@@ -3,7 +3,7 @@
 <title>music-saver deterministic player</title>
 <style>body{font:20px system-ui;background:#121212;color:#eee;padding:40px}button{font:inherit;padding:12px;margin:8px}input{width:70%}#status{color:#1ed760}</style>
 <h1>music-saver player fixture</h1>
-<p>This is controlled browser coverage, not live Spotify.</p>
+<p>Controlled browser coverage, not live Spotify.</p>
 <div data-testid="now-playing-widget">
   <a data-testid="context-item-info-title">E2E song</a>
   <span data-testid="context-item-info-artist">Test artist</span>
@@ -21,8 +21,11 @@ let pending = liked;
 let playing = false;
 let position = 0;
 let last = performance.now();
-let clicks = 0;
-let fail = params.get('fail') === 'true';
+let opens = 0;
+let saves = 0;
+let fails = 0;
+let failedOnce = false;
+let failMode = params.get('fail') || 'none';
 const like = document.querySelector('#like');
 const play = document.querySelector('#play');
 const range = document.querySelector('input');
@@ -32,12 +35,19 @@ function render() {
   like.setAttribute('aria-checked', String(liked));
   play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
   range.value = position;
-  document.querySelector('#status').textContent = `Liked: ${liked}. Save actions: ${clicks}. Position: ${Math.round(position)} ms.`;
+  document.querySelector('#status').textContent =
+    `Liked: ${liked}. Saves: ${saves}. Like control opens: ${opens}. Failed attempts: ${fails}. ` +
+    `Position: ${Math.round(position)} ms. Track: ${anchor.href}.`;
+}
+function failing() {
+  if (failMode === 'always') return true;
+  if (failMode === 'once' && !failedOnce) { failedOnce = true; return true; }
+  return false;
 }
 like.onclick = () => {
-  clicks++;
-  if (fail) return;
-  if (!liked) { liked = true; render(); return; }
+  opens++;
+  if (failing()) { fails++; render(); return; }
+  if (!liked) { liked = true; saves++; render(); return; }
   pending = liked;
   const menu = document.createElement('div');
   menu.dataset.testid = 'context-menu';
@@ -50,10 +60,11 @@ like.onclick = () => {
 };
 play.onclick = () => { playing = !playing; render(); };
 window.fixture = {
-  state: () => ({liked, clicks, playing, position}),
+  state: () => ({ liked, opens, saves, fails, playing, position, track: anchor.href }),
   seek: (ms) => { position = ms; render(); },
   ad: (active) => { document.querySelector('[data-testid=advertisement]').hidden = !active; },
-  recover: () => { fail = false; },
+  track: (id) => { anchor.href = 'spotify:track:' + id; position = 0; render(); },
+  recover: () => { failMode = 'none'; failedOnce = true; },
 };
 setInterval(() => {
   const now = performance.now();
