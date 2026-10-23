@@ -4,6 +4,27 @@
 
 Spotify-first Chromium extension that auto-saves tracks the user listens through while working. Design is fully locked: Liked Songs destination, sounded-time 90 percent plus 60s floor once per track ID, auto-save with Undo toast and local log, check-then-skip already-saved tracks, retry queue with backoff plus manual retry, settings with threshold 90 plus floor 60s plus enable-disable, Spotify web scope, public repo. Q11 answered NO Premium, so v1 drives the web player through a content script (ADR-0003) and the tested API client stays parked for a post-Premium future.
 
+## Trusted global PR gates
+
+### Summary
+
+Add a default-branch metadata policy before considering a separate all-branch check ruleset.
+Keep ruleset 25511836 unchanged. Propose a separate all-branch PR-check ruleset.
+Do not require the nightly-only `live` job. Do not copy deletion or non-fast-forward protections.
+All-branch required checks can also block ordinary feature-branch updates. Resolve this platform constraint before activation.
+Do not merge or activate until an independent reviewer approves the exact deployment head.
+
+### Milestones
+
+1. Inspect PR8 and PR18, then test rejected metadata and weaker workflow provenance before implementation.
+2. Add a metadata-only verifier and deployment workflow. Never execute PR code with its write token.
+   Document that Actions-owned check names cannot provide an independent trust anchor.
+   Require a dedicated App verdict or organization-required workflows before claiming tamper-proof global enforcement.
+3. Verify locally and open a deployment PR against `main`. Preserve the remote ruleset snapshot.
+4. After reviewed deployment, activate the additional trusted context and all-branch scope, then read back the API state.
+
+The throughput checkpoint is a tested deployment PR. Remote activation remains blocked until that PR reaches `main`.
+
 ## Milestones
 
 ### M0 Repo and docs (done)
