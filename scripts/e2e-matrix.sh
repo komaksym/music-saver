@@ -122,8 +122,54 @@ fi
 LIKE_STATE=$(ab_ext eval "(${LIKE_QUERY})?.getAttribute('aria-checked')")
 printf '%s\n' "$LIKE_STATE" > "$ART/matrix-like-before.txt"
 if ! printf '%s' "$LIKE_STATE" | grep -Fq false; then
-  echo "test track must start unliked; found Like state '$LIKE_STATE'" >&2
-  exit 7
+  echo "test track starts liked; resetting it through the player menu"
+  RESET_STATE=$(ab_ext eval --stdin <<'JS'
+(async () => {
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const button = () => document.querySelector('[data-testid="now-playing-widget"] button[aria-checked]');
+  const state = () => button()?.getAttribute('aria-checked');
+  if (state() === 'false') return 'unliked';
+  const like = button();
+  if (!like) return 'missing';
+  like.click();
+  await sleep(250);
+  if (state() === 'false') return 'unliked';
+  let menu = null;
+  for (let attempt = 0; attempt < 25 && !menu; attempt += 1) {
+    menu = document.querySelector('[data-testid="context-menu"]');
+    if (!menu) await sleep(100);
+  }
+  if (!menu) return 'no-menu';
+  let row = null;
+  for (let attempt = 0; attempt < 25 && !row; attempt += 1) {
+    const label = menu.querySelector('[aria-labelledby="listrow-title-spotify:collection:tracks"]');
+    row = label?.closest?.('button[role="menuitemcheckbox"]');
+    if (!row) {
+      row = Array.from(menu.querySelectorAll('button[role="menuitemcheckbox"]'))
+        .find((item) => (item.textContent || '').toLowerCase().includes('liked songs'));
+    }
+    if (!row) await sleep(100);
+  }
+  if (!row) return 'no-liked-row';
+  if (row.getAttribute('aria-checked') === 'true') {
+    row.click();
+    await sleep(200);
+  }
+  const done = menu.querySelector('button[type="submit"]');
+  if (!done) return 'no-done';
+  done.click();
+  for (let attempt = 0; attempt < 25 && state() !== 'false'; attempt += 1) {
+    await sleep(100);
+  }
+  return state() || 'unknown';
+})()
+JS
+  )
+  printf '%s\n' "$RESET_STATE" > "$ART/matrix-like-reset.txt"
+  if ! printf '%s' "$RESET_STATE" | grep -Fq unliked; then
+    echo "could not reset the test track Like state: $RESET_STATE" >&2
+    exit 7
+  fi
 fi
 
 PLAY_LABEL=$(ab_ext eval "(${PLAY_QUERY})?.getAttribute('aria-label')")
