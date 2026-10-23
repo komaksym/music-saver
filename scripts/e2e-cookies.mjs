@@ -14,6 +14,10 @@ const FIELDS = [
   "expires",
 ];
 
+// Messages from this class are safe to print. Operator input and cookie
+// values never pass through. Everything else prints as a name only.
+class CliError extends Error {}
+
 function cookiesFrom(snapshot) {
   if (Array.isArray(snapshot)) return snapshot;
   if (Array.isArray(snapshot?.data?.cookies)) return snapshot.data.cookies;
@@ -68,7 +72,7 @@ export function cookieSetArgs(cookie) {
 
 function merge([openPath, accountsPath, outPath]) {
   if (!openPath || !accountsPath || !outPath) {
-    throw new Error("usage: e2e-cookies.mjs merge <open-snapshot> <accounts-snapshot> <output>");
+    throw new CliError("usage: e2e-cookies.mjs merge <open-snapshot> <accounts-snapshot> <output>");
   }
   const merged = mergeSpotifyCookieSnapshots(
     JSON.parse(readFileSync(openPath, "utf8")),
@@ -80,7 +84,7 @@ function merge([openPath, accountsPath, outPath]) {
 
 function restore([cookiesPath]) {
   if (!cookiesPath || !process.env.SESSION || !process.env.PROFILE) {
-    throw new Error("restore needs a cookie file, SESSION, and PROFILE");
+    throw new CliError("restore needs a cookie file, SESSION, and PROFILE");
   }
   const run = (args) => execFileSync("agent-browser", [
     "--session",
@@ -92,21 +96,31 @@ function restore([cookiesPath]) {
 
   run(["open", "https://open.spotify.com/"]);
   const cookies = JSON.parse(readFileSync(cookiesPath, "utf8"));
-  for (const cookie of cookies) run(cookieSetArgs(cookie));
+  for (const cookie of cookies) {
+    try {
+      run(cookieSetArgs(cookie));
+    } catch (error) {
+      throw new CliError(`failed to restore cookie ${cookie.name ?? "unknown"} (${error.name})`);
+    }
+  }
   console.log(`cookies restored: ${cookies.length}`);
 }
 
 function main([command, ...args]) {
   if (command === "merge") return merge(args);
   if (command === "restore") return restore(args);
-  throw new Error("usage: e2e-cookies.mjs <merge|restore> ...");
+  throw new CliError("usage: e2e-cookies.mjs <merge|restore> ...");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     main(process.argv.slice(2));
   } catch (error) {
-    console.error(error.message);
+    if (error instanceof CliError) {
+      console.error(error.message);
+    } else {
+      console.error(`E2E cookie operation failed (${error?.name ?? "Error"}); details omitted to protect cookie values`);
+    }
     process.exitCode = 1;
   }
 }

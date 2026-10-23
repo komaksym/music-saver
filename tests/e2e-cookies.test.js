@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -95,4 +95,40 @@ test("host cookies use the accounts URL and other cookies use their domain", () 
   const domainArgs = cookieSetArgs(cookie("sp_dc", ".spotify.com", "token"));
   assert.equal(domainArgs.includes("--url"), false);
   assert.equal(domainArgs[domainArgs.indexOf("--domain") + 1], ".spotify.com");
+});
+
+test("restore failure names the cookie without printing its value", () => {
+  const dir = mkdtempSync(join(tmpdir(), "music-saver-restore-"));
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "agent-browser"), `#!/bin/sh
+case "$*" in
+  *" open "*) exit 0 ;;
+  *) exit 1 ;;
+esac
+`, { mode: 0o755 });
+  const cookiesPath = join(dir, "cookies.json");
+  const sentinel = "SENTINEL-COOKIE-VALUE";
+  writeFileSync(cookiesPath, JSON.stringify([
+    cookie("sp_dc", ".spotify.com", sentinel),
+  ]));
+
+  const result = spawnSync(process.execPath, [
+    "scripts/e2e-cookies.mjs",
+    "restore",
+    cookiesPath,
+  ], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+      SESSION: "test-session",
+      PROFILE: dir,
+    },
+  });
+
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  assert.match(result.stderr, /failed to restore cookie sp_dc \(Error\)/);
+  assert.equal(result.stderr.includes(sentinel), false);
+  assert.equal(result.stderr.includes("--domain"), false);
 });

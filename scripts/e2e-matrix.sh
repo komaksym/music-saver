@@ -15,7 +15,51 @@ close_quiet() {
     sleep 1
   fi
 }
-trap close_quiet EXIT
+cleanup_note() {
+  if [ -d "${ART:-}" ]; then
+    printf '%s\n' "$*" >> "$ART/matrix-cleanup.txt" 2>/dev/null || true
+  fi
+}
+TRACK_OPEN=0
+SETTINGS_CHANGED=0
+CLEANUP_DONE=0
+cleanup() {
+  local status=$?
+  trap - EXIT INT TERM
+  if [ "$CLEANUP_DONE" = "1" ]; then
+    exit "$status"
+  fi
+  CLEANUP_DONE=1
+  cleanup_note "cleanup: status=$status track-open=$TRACK_OPEN settings-changed=$SETTINGS_CHANGED"
+  if [ "$TRACK_OPEN" = "1" ] && declare -F ab_ext >/dev/null 2>&1; then
+    local like_state=""
+    like_state="$(ab_ext eval "(${LIKE_QUERY})?.getAttribute('aria-checked')" 2>/dev/null || true)"
+    if [ "$like_state" = "true" ]; then
+      local reset_state=""
+      reset_state="$(remove_like_dom 2>/dev/null || true)"
+      cleanup_note "like: was checked; cleanup=${reset_state:-unavailable}"
+    else
+      cleanup_note "like: ${like_state:-unavailable}"
+    fi
+    TRACK_OPEN=0
+  fi
+  if [ "$SETTINGS_CHANGED" = "1" ] && declare -F ab_ext >/dev/null 2>&1; then
+    if ab_ext open "$OPTIONS" >/dev/null 2>&1; then
+      ab_ext eval --stdin >/dev/null 2>&1 <<'JS' || true
+chrome.storage.local.set({ settings: { enabled: true, thresholdRatio: 0.9, minSoundedMs: 60000 } })
+JS
+      cleanup_note "settings: restored"
+    else
+      cleanup_note "settings: browser unavailable"
+    fi
+    SETTINGS_CHANGED=0
+  fi
+  close_quiet
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [ ! -d "$PROFILE/Default" ]; then
   if [ "${E2E_REQUIRE_AUTH:-0}" = "1" ]; then
@@ -43,6 +87,52 @@ TRACK_URL="https://open.spotify.com/track/${SCENARIO_URI##*:}"
 
 ab_ext() {
   agent-browser --session "$SESSION" --profile "$PROFILE" --extension "$EXT" "$@"
+}
+
+# Remove the Like through Spotify's own control. This is idempotent so the
+# failure trap and the initial reset can share it.
+remove_like_dom() {
+  ab_ext eval --stdin <<'JS'
+(async () => {
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const button = () => document.querySelector('[data-testid="now-playing-widget"] button[aria-checked]');
+  const state = () => button()?.getAttribute('aria-checked');
+  if (state() === 'false') return 'unliked';
+  const like = button();
+  if (!like) return 'missing';
+  like.click();
+  await sleep(250);
+  if (state() === 'false') return 'unliked';
+  let menu = null;
+  for (let attempt = 0; attempt < 25 && !menu; attempt += 1) {
+    menu = document.querySelector('[data-testid="context-menu"]');
+    if (!menu) await sleep(100);
+  }
+  if (!menu) return 'no-menu';
+  let row = null;
+  for (let attempt = 0; attempt < 25 && !row; attempt += 1) {
+    const label = menu.querySelector('[aria-labelledby="listrow-title-spotify:collection:tracks"]');
+    row = label?.closest?.('button[role="menuitemcheckbox"]');
+    if (!row) {
+      row = Array.from(menu.querySelectorAll('button[role="menuitemcheckbox"]'))
+        .find((item) => (item.textContent || '').toLowerCase().includes('liked songs'));
+    }
+    if (!row) await sleep(100);
+  }
+  if (!row) return 'no-liked-row';
+  if (row.getAttribute('aria-checked') === 'true') {
+    row.click();
+    await sleep(200);
+  }
+  const done = menu.querySelector('button[type="submit"]');
+  if (!done) return 'no-done';
+  done.click();
+  for (let attempt = 0; attempt < 25 && state() !== 'false'; attempt += 1) {
+    await sleep(100);
+  }
+  return state() === 'false' ? 'unliked' : (state() || 'unknown');
+})()
+JS
 }
 
 # Read Chrome's extension registry so the options page can set test settings.
@@ -94,6 +184,7 @@ echo "matrix gate: logged in"
 
 ab_ext open "$OPTIONS"
 ab_ext wait --text "music-saver"
+SETTINGS_CHANGED=1
 SETTINGS_RESULT=$(ab_ext eval --stdin <<'JS'
 chrome.storage.local
   .set({ settings: { enabled: true, thresholdRatio: 0.01, minSoundedMs: 0 } })
@@ -107,6 +198,7 @@ if ! printf '%s' "$SETTINGS_RESULT" | grep -Fq true; then
 fi
 printf '%s\n' "settings: thresholdRatio=0.01, minSoundedMs=0" > "$ART/matrix-settings.txt"
 
+TRACK_OPEN=1
 ab_ext open "$TRACK_URL"
 ab_ext wait --load domcontentloaded
 LIKE_QUERY='document.querySelector("[data-testid=now-playing-widget] button[aria-checked]")'
@@ -123,48 +215,7 @@ LIKE_STATE=$(ab_ext eval "(${LIKE_QUERY})?.getAttribute('aria-checked')")
 printf '%s\n' "$LIKE_STATE" > "$ART/matrix-like-before.txt"
 if ! printf '%s' "$LIKE_STATE" | grep -Fq false; then
   echo "test track starts liked; resetting it through the player menu"
-  RESET_STATE=$(ab_ext eval --stdin <<'JS'
-(async () => {
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  const button = () => document.querySelector('[data-testid="now-playing-widget"] button[aria-checked]');
-  const state = () => button()?.getAttribute('aria-checked');
-  if (state() === 'false') return 'unliked';
-  const like = button();
-  if (!like) return 'missing';
-  like.click();
-  await sleep(250);
-  if (state() === 'false') return 'unliked';
-  let menu = null;
-  for (let attempt = 0; attempt < 25 && !menu; attempt += 1) {
-    menu = document.querySelector('[data-testid="context-menu"]');
-    if (!menu) await sleep(100);
-  }
-  if (!menu) return 'no-menu';
-  let row = null;
-  for (let attempt = 0; attempt < 25 && !row; attempt += 1) {
-    const label = menu.querySelector('[aria-labelledby="listrow-title-spotify:collection:tracks"]');
-    row = label?.closest?.('button[role="menuitemcheckbox"]');
-    if (!row) {
-      row = Array.from(menu.querySelectorAll('button[role="menuitemcheckbox"]'))
-        .find((item) => (item.textContent || '').toLowerCase().includes('liked songs'));
-    }
-    if (!row) await sleep(100);
-  }
-  if (!row) return 'no-liked-row';
-  if (row.getAttribute('aria-checked') === 'true') {
-    row.click();
-    await sleep(200);
-  }
-  const done = menu.querySelector('button[type="submit"]');
-  if (!done) return 'no-done';
-  done.click();
-  for (let attempt = 0; attempt < 25 && state() !== 'false'; attempt += 1) {
-    await sleep(100);
-  }
-  return state() === 'false' ? 'unliked' : (state() || 'unknown');
-})()
-JS
-  )
+  RESET_STATE=$(remove_like_dom)
   printf '%s\n' "$RESET_STATE" > "$ART/matrix-like-reset.txt"
   if ! printf '%s' "$RESET_STATE" | grep -Fq unliked; then
     echo "could not reset the test track Like state: $RESET_STATE" >&2
@@ -237,6 +288,7 @@ if ! printf '%s' "$UNDO_CLICKED" | grep -Fq true; then
   exit 10
 fi
 ab_ext wait --fn "(${TOAST_QUERY}) === null && (${LIKE_QUERY})?.getAttribute('aria-checked') === 'false'"
+TRACK_OPEN=0
 ab_ext screenshot "$ART/matrix-cleaned.png"
 echo "scenario $SCENARIO_NAME: saved and undone"
 
@@ -244,6 +296,7 @@ ab_ext open "$OPTIONS"
 ab_ext eval --stdin <<'JS' >/dev/null
 chrome.storage.local.set({ settings: { enabled: true, thresholdRatio: 0.9, minSoundedMs: 60000 } })
 JS
+SETTINGS_CHANGED=0
 
 MATRIX="$MATRIX" OUT="$ART/matrix-status.json" SCENARIO="$SCENARIO_NAME" node <<'NODE'
 const fs = require("node:fs");

@@ -36,6 +36,14 @@ because the headed window can take focus from you.
 CI sets `E2E_REQUIRE_AUTH=1`. In this mode, a missing login profile is
 exit 3, not a skip. A local run without a profile still skips with exit 0.
 
+The workflow has two jobs. Pull requests run only the secretless smoke
+job: checkout, install agent-browser, then the headless smoke check. The
+credentialed job restores cookies and runs the player and matrix under
+Xvfb. It runs only for `schedule` and `workflow_dispatch` events on
+`refs/heads/main`, so no pull-request step receives the cookie secret.
+Live runs are serialized and never cancel in progress because they mutate
+the shared agent account.
+
 The matrix executes one save scenario with the public test track
 `spotify:track:7LoBfKLpz4BGrxCuOzAKRz`. It opens the extension options
 page and sets the test-only threshold to 1% and the floor to 0 seconds.
@@ -43,6 +51,11 @@ Then it opens the track, starts playback, checks that the Like control
 becomes checked, and checks for the extension save toast. It clicks Undo
 and restores the default 90% and 60-second settings. The other four matrix
 records stay marked `automation: "unproven"`.
+
+The matrix installs an EXIT/INT/TERM trap. If a run stops after the save,
+the trap removes the Like through the player control and restores the
+default settings before it closes the browser. A failed or cancelled run
+does not leave the shared track liked.
 
 Local verification is limited to these commands:
 
