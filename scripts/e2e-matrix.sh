@@ -161,7 +161,7 @@ if ! printf '%s' "$LIKE_STATE" | grep -Fq false; then
   for (let attempt = 0; attempt < 25 && state() !== 'false'; attempt += 1) {
     await sleep(100);
   }
-  return state() || 'unknown';
+  return state() === 'false' ? 'unliked' : (state() || 'unknown');
 })()
 JS
   )
