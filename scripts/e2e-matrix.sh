@@ -197,7 +197,22 @@ if ! printf '%s' "$TOAST_TEXT" | grep -Fq 'saved to Liked Songs'; then
   exit 8
 fi
 ab_ext screenshot "$ART/matrix-save.png"
-ab_ext screenshot '[data-testid="music-saver-toast"]' "$ART/matrix-toast.png"
+ab_ext eval --stdin > "$ART/matrix-toast-dom.json" <<'JS'
+(() => {
+  const toast = document.querySelector('[data-testid="music-saver-toast"]');
+  if (!toast) return null;
+  const rect = toast.getBoundingClientRect();
+  const style = getComputedStyle(toast);
+  return {
+    text: toast.textContent,
+    html: toast.outerHTML,
+    rect: { width: rect.width, height: rect.height, top: rect.top, left: rect.left },
+    display: style.display,
+    visibility: style.visibility,
+    zIndex: style.zIndex,
+  };
+})()
+JS
 ab_ext snapshot -i > "$ART/matrix-save-snapshot.txt"
 LIKE_AFTER=$(ab_ext eval "(${LIKE_QUERY})?.getAttribute('aria-checked')")
 printf '%s\n' "$LIKE_AFTER" > "$ART/matrix-like-after.txt"
