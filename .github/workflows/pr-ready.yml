@@ -3,6 +3,22 @@ name: pr-ready
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
+  workflow_call:
+    inputs:
+      repo:
+        description: Owner/repo the PR belongs to
+        required: false
+        default: ''
+        type: string
+      head_sha:
+        description: PR head SHA to roll up
+        required: true
+        type: string
+      timeout_seconds:
+        description: Seconds to wait for required checks
+        required: false
+        default: '720'
+        type: string
 
 permissions:
   contents: read
@@ -16,10 +32,13 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          repository: ${{ inputs.repo || github.repository }}
           fetch-depth: 0
           persist-credentials: false
       - name: Roll up required checks into ready
         env:
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: bash scripts/check-ready-rollup.sh "$HEAD_SHA"
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.head_sha }}
+          REPO: ${{ inputs.repo || github.repository }}
+          TIMEOUT: ${{ inputs.timeout_seconds }}
+        run: bash scripts/check-ready-rollup.sh "$HEAD_SHA" "$REPO" "$TIMEOUT"

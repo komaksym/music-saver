@@ -3,6 +3,22 @@ name: commit-lint
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
+  workflow_call:
+    inputs:
+      repo:
+        description: Owner/repo to lint
+        required: false
+        default: ''
+        type: string
+      base_ref:
+        description: Base branch ref to compare against, e.g. main
+        required: true
+        type: string
+      head_sha:
+        description: Head SHA to lint up to
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -14,15 +30,17 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          repository: ${{ inputs.repo || github.repository }}
+          ref: ${{ inputs.head_sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Fetch base
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || inputs.base_ref }}
         run: git fetch origin "$BASE_REF"
       - name: Lint commit messages
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || inputs.base_ref }}
         run: |
           base="origin/$BASE_REF"
           fail=0

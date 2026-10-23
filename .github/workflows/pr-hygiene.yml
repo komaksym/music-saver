@@ -3,6 +3,22 @@ name: pr-hygiene
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
+  workflow_call:
+    inputs:
+      pr_body:
+        description: PR body text to check
+        required: true
+        type: string
+      repo:
+        description: Owner/repo carrying scripts/check-pr-body.sh
+        required: false
+        default: ''
+        type: string
+      head_sha:
+        description: PR head SHA under check
+        required: false
+        default: ''
+        type: string
 
 permissions:
   pull-requests: read
@@ -12,41 +28,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ inputs.repo || github.repository }}
+          sparse-checkout: scripts/check-pr-body.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - name: Check PR body headings
         env:
-          BODY: ${{ github.event.pull_request.body }}
-        run: |
-          echo Checking PR body for required headings...
-          # Strip fenced code blocks. A fence opened with N backticks or tildes
-          # closes only on a run of at least N of the same character, so a
-          # four-backtick fence does not swallow the headings that follow it
-          # and tilde-fenced blocks do not leak fake headings.
-          text=$(printf '%s' "$BODY" | awk '
-            {
-              line = $0
-              sub(/^[[:space:]]+/, "", line)
-              n = 0
-              c = substr(line, 1, 1)
-              if (c == "`" || c == "~") {
-                while (substr(line, n + 1, 1) == c) n++
-              }
-              if (open == 0) {
-                if (n >= 3) { open = n; fence = c; next }
-                print
-                next
-              }
-              if (c == fence && n >= open && substr(line, n + 1) ~ /^[[:space:]]*$/) open = 0
-            }
-          ')
-          missing=0
-          for h in '## Summary' '## Validation' '## Risks / Notes' '## Breaking changes' '## Visual summary'; do
-            if ! printf '%s' "$text" | grep -Fqx -- "$h"; then
-              echo "::error::Missing required heading: $h"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            echo "PR body must contain the five house headings."
-            exit 1
-          fi
-          echo All required headings present.
+          BODY: ${{ github.event.pull_request.body || inputs.pr_body }}
+        run: bash scripts/check-pr-body.sh
