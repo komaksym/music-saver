@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 const script = resolve("scripts/check-ready-rollup.sh");
 const head = "a".repeat(40);
 
-const REVIEWER = "cubic · AI code reviewer";
+const REVIEWER = "cubic \u00b7 AI code reviewer";
 
 const REQUIRED = [
   "ci",
@@ -23,42 +23,68 @@ const REQUIRED = [
   REVIEWER,
 ];
 
-async function runRollup(verdicts) {
-  const dir = await mkdtemp(join(tmpdir(), "ready-rollup-"));
-  const gh = join(dir, "gh");
-  const arms = Object.entries(verdicts)
-    .map(([ctx, verdict], i) => `    ${i === 0 ? "if" : "elif"} [ "$ctx" = "${ctx}" ]; then echo ${verdict};`)
-    .join("\n");
-  await writeFile(
-    gh,
-    `#!/usr/bin/env bash
-url="$2"
-case "$url" in
-  */status) echo pending; exit 0 ;;
-esac
-ctx=""
-for a in "$@"; do
-  case "$a" in
-    *check_name=*) ctx="\${a##*check_name=}"; ctx="\${ctx%%&*}" ;;
-  esac
-done
-ctx=\$(printf '%b' "\${ctx//%/\\x}")
-if [ -z "$ctx" ]; then echo success; exit 0; fi
-${arms || "if true; then echo success;"}
-else echo success; fi
-`,
-    "utf8",
-  );
-  await chmod(gh, 0o755);
+// Fake gh serves one check-runs payload and applies the script own
+// --jq filter, so verdict, ordering, and Unicode-name bugs surface instead
+// of being flattened by the stub. Context names never match in shell; they
+// flow through JSON and jq only. The status endpoint always reports
+// success so the check-runs payload alone drives the verdict.
+const STUB = "#!/usr/bin/env bash\nurl=\"$2\"\ncase \"$url\" in\n  */status) echo success; exit 0 ;;\nesac\nfilter=\"\"\nprev=\"\"\nfor a in \"$@\"; do\n  if [ \"$prev\" = \"--jq\" ]; then filter=\"$a\"; fi\n  prev=\"$a\"\ndone\nif [ -n \"$filter\" ]; then jq -r \"$filter\" \"$GH_STUB_PAYLOAD\"; else cat \"$GH_STUB_PAYLOAD\"; fi\n";
+
+function makeRun(id, name, verdict) {
+  if (verdict === "pending") {
+    return { id: id, head_sha: head, name: name, status: "in_progress", conclusion: null };
+  }
+  return { id: id, head_sha: head, name: name, status: "completed", conclusion: verdict };
+}
+
+async function spawnStub(dir, payload) {
+  await writeFile(join(dir, "runs.json"), JSON.stringify({ check_runs: payload }), "utf8");
+  await writeFile(join(dir, "gh"), STUB, "utf8");
+  await chmod(join(dir, "gh"), 0o755);
   try {
     return spawnSync("bash", [script, head, "owner/repo", "0"], {
-      env: { ...process.env, PATH: `${dir}:${process.env.PATH}` },
+      env: { ...process.env, PATH: dir + ":" + process.env.PATH, GH_STUB_PAYLOAD: join(dir, "runs.json") },
       encoding: "utf8",
     });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 }
+
+// Every required context defaults to green; each test only states the
+// verdicts it varies. Extra contexts prove the rollup ignores them.
+async function runRollup(verdicts) {
+  const dir = await mkdtemp(join(tmpdir(), "ready-rollup-"));
+  let id = 1;
+  const payload = [];
+  for (const ctx of REQUIRED) {
+    const v = Object.hasOwn(verdicts, ctx) ? verdicts[ctx] : "success";
+    payload.push(makeRun(id++, ctx, v));
+  }
+  for (const ctx of Object.keys(verdicts)) {
+    if (!REQUIRED.includes(ctx)) payload.push(makeRun(id++, ctx, verdicts[ctx]));
+  }
+  return spawnStub(dir, payload);
+}
+
+// Explicit per-context run lists; unmentioned contexts default to one green
+// run so ordering tests only state what they vary. The script under test
+// owns name matching and newest-run selection in jq.
+async function runRollupRuns(runsByContext) {
+  const dir = await mkdtemp(join(tmpdir(), "ready-rollup-runs-"));
+  let id = 500;
+  const payload = [];
+  for (const ctx of REQUIRED) {
+    if (Object.hasOwn(runsByContext, ctx)) {
+      for (const r of runsByContext[ctx]) payload.push({ name: ctx, ...r });
+    } else {
+      payload.push({ id: id++, head_sha: head, name: ctx, status: "completed", conclusion: "success" });
+    }
+  }
+  return spawnStub(dir, payload);
+}
+
+const run = (id, fields) => ({ id, head_sha: head, ...fields });
 
 test("ready passes when every required context is green", async () => {
   const result = await runRollup({});
@@ -81,8 +107,8 @@ test("ready still fails when a workflow context fails", async () => {
 test("every required context blocks ready on failure", async () => {
   for (const ctx of REQUIRED.filter((c) => c !== "ready")) {
     const result = await runRollup({ [ctx]: "failure" });
-    assert.equal(result.status, 1, `${ctx}: ${result.stdout}`);
-    assert.ok(result.stderr.includes(`FAILED contexts: ${ctx}`), ctx);
+    assert.equal(result.status, 1, ctx + ": " + result.stdout);
+    assert.ok(result.stderr.includes("FAILED contexts: " + ctx), ctx);
   }
 });
 
@@ -98,67 +124,19 @@ test("a neutral context fails instead of waiting", async () => {
   assert.ok(result.stderr.includes("FAILED contexts: actionlint"));
 });
 
+test("a skipped reviewer fails instead of waiting", async () => {
+  const result = await runRollup({ [REVIEWER]: "skipped" });
+  assert.equal(result.status, 1, result.stdout);
+  assert.ok(result.stderr.includes("FAILED contexts: " + REVIEWER));
+});
+
 test("a pending reviewer blocks ready", async () => {
   const result = await runRollup({ [REVIEWER]: "pending" });
   assert.equal(result.status, 1, result.stdout);
-  assert.ok(result.stderr.includes(`PENDING contexts at timeout: ${REVIEWER}`));
+  assert.ok(result.stderr.includes("PENDING contexts at timeout: " + REVIEWER));
 });
 
-const jqSkip = spawnSync("jq", ["--version"]).status === 0 ? false : "jq not installed";
-
-// Serves raw check-run payloads and lets the hotspot script own --jq query pick the
-// newest run, so ordering bugs surface instead of being flattened by the stub.
-async function runRollupRuns(runsByContext) {
-  const dir = await mkdtemp(join(tmpdir(), "ready-rollup-runs-"));
-  const gh = join(dir, "gh");
-  const arms = [];
-  let n = 0;
-  for (const [ctx, runs] of Object.entries(runsByContext)) {
-    const file = join(dir, `${n}.json`);
-    n += 1;
-    await writeFile(file, JSON.stringify({ check_runs: runs }), "utf8");
-    arms.push(`${arms.length === 0 ? "if" : "elif"} [ "$ctx" = "${ctx}" ]; then file="${file}";`);
-  }
-  await writeFile(
-    gh,
-    `#!/usr/bin/env bash
-url="$2"
-case "$url" in
-  */status) echo success; exit 0 ;;
-esac
-prev=""
-filter=""
-ctx=""
-for a in "$@"; do
-  case "$a" in
-    *check_name=*) ctx="\${a##*check_name=}"; ctx="\${ctx%%&*}" ;;
-  esac
-  if [ "$prev" = "--jq" ]; then filter="$a"; fi
-  prev="$a"
-done
-ctx=\$(printf '%b' "\${ctx//%/\\x}")
-if [ -z "$ctx" ]; then echo success; exit 0; fi
-file=""
-${arms.join("\n")}
-else echo success; exit 0; fi
-if [ -n "$filter" ]; then jq -r "$filter" "$file"; else cat "$file"; fi
-`,
-    "utf8",
-  );
-  await chmod(gh, 0o755);
-  try {
-    return spawnSync("bash", [script, head, "owner/repo", "0"], {
-      env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, GH_HEAD: head },
-      encoding: "utf8",
-    });
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
-
-const run = (id, fields) => ({ id, head_sha: head, ...fields });
-
-test("ready ignores its own in-progress run", { skip: jqSkip }, async () => {
+test("ready ignores its own in-progress run", async () => {
   const result = await runRollupRuns({
     ready: [
       run(11, { status: "in_progress", conclusion: null, completed_at: null }),
@@ -168,7 +146,7 @@ test("ready ignores its own in-progress run", { skip: jqSkip }, async () => {
   assert.match(result.stdout, /ready: all listed workflow contexts green/);
 });
 
-test("a completed ready failure still blocks", { skip: jqSkip }, async () => {
+test("a completed ready failure still blocks", async () => {
   const result = await runRollupRuns({
     ready: [
       run(11, { status: "completed", conclusion: "failure", completed_at: "2026-10-22T10:00:00Z" }),
@@ -178,7 +156,7 @@ test("a completed ready failure still blocks", { skip: jqSkip }, async () => {
   assert.ok(result.stderr.includes("FAILED contexts: ready"));
 });
 
-test("a newer in-progress rerun outranks an older success", { skip: jqSkip }, async () => {
+test("a newer in-progress rerun outranks an older success", async () => {
   const result = await runRollupRuns({
     ci: [
       run(11, { status: "completed", conclusion: "success", completed_at: "2026-10-22T10:00:00Z" }),
@@ -190,7 +168,7 @@ test("a newer in-progress rerun outranks an older success", { skip: jqSkip }, as
   assert.doesNotMatch(result.stdout, /ready: all listed workflow contexts green/);
 });
 
-test("a newer completed run outranks an older in-progress one", { skip: jqSkip }, async () => {
+test("a newer completed run outranks an older in-progress one", async () => {
   const result = await runRollupRuns({
     ci: [
       run(11, { status: "in_progress", conclusion: null, completed_at: null }),
@@ -201,7 +179,7 @@ test("a newer completed run outranks an older in-progress one", { skip: jqSkip }
   assert.match(result.stdout, /ready: all listed workflow contexts green/);
 });
 
-test("a newer failure outranks an older success", { skip: jqSkip }, async () => {
+test("a newer failure outranks an older success", async () => {
   const result = await runRollupRuns({
     ci: [
       run(11, { status: "completed", conclusion: "success", completed_at: "2026-10-22T10:00:00Z" }),
@@ -212,7 +190,7 @@ test("a newer failure outranks an older success", { skip: jqSkip }, async () => 
   assert.match(result.stderr, /FAILED contexts: ci/);
 });
 
-test("runs for another head sha are ignored", { skip: jqSkip }, async () => {
+test("runs for another head sha are ignored", async () => {
   const result = await runRollupRuns({
     ci: [
       run(11, { status: "completed", conclusion: "success", completed_at: "2026-10-22T10:00:00Z" }),

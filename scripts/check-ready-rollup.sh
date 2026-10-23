@@ -31,14 +31,15 @@ REQUIRED=(
 
 deadline=$((SECONDS + TIMEOUT))
 while true; do
+  # One page of check runs for this commit; names match in jq so Unicode
+  # contexts stay exact with no URL encoding and no shell-side decoding.
+  runs=$(GH_HEAD="$HEAD_SHA" gh api "repos/$REPO/commits/$HEAD_SHA/check-runs?per_page=100" --jq '[.check_runs[] | select(.head_sha == $ENV.GH_HEAD)]')
   pending=()
   failed=()
   for ctx in "${REQUIRED[@]}"; do
     # Newest run for this head wins, even when it is still running: an older
-    # success must not mask a rerun that has not finished. jq @uri-encodes the
-    # spaced reviewer name correctly.
-    enc=$(jq -nr --arg s "$ctx" '$s|@uri')
-    run=$(GH_HEAD="$HEAD_SHA" gh api "repos/$REPO/commits/$HEAD_SHA/check-runs?check_name=$enc&per_page=50" --jq '[.check_runs[] | select(.head_sha == $ENV.GH_HEAD)] | sort_by(.id) | last | if . == null then "none" elif .status != "completed" then "pending" else (.conclusion // "none") end')
+    # success must not mask a rerun that has not finished.
+    run=$(printf '%s' "$runs" | GH_CTX="$ctx" jq -r 'map(select(.name == $ENV.GH_CTX)) | sort_by(.id) | last | if . == null then "none" elif .status != "completed" then "pending" else (.conclusion // "none") end')
     if [ "$run" = "success" ]; then
       continue
     fi
