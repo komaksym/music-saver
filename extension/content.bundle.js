@@ -239,6 +239,10 @@ function rangeMs(range) {
 }
 
 function readPlayback(doc, wallMs) {
+  for (const selector of ['[data-testid="ad-slot"]', '[data-testid="advertisement"]']) {
+    const ad = doc.querySelector(selector);
+    if (ad && ad.getClientRects().length > 0) return null;
+  }
   let playBtn = null;
   try {
     playBtn = doc.querySelector(SELECTORS.playPause);
@@ -700,7 +704,10 @@ class WatchLoop {
     } catch (e) {
       return null;
     }
-    if (!sample || !sample.track || !(sample.durationMs > 0)) return null;
+    if (!sample || !sample.track || !(sample.durationMs > 0)) {
+      this.sampler.reset();
+      return null;
+    }
     if (sample.track.id !== this.lastPolledId) {
       this.lastPolledId = sample.track.id;
       this.lastRetryPollMs = now;

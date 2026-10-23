@@ -46,6 +46,19 @@ Spotify-first Chromium extension that auto-saves tracks the user listens through
 - End-to-end pass on `open.spotify.com` in Brave with logged-in session: listen, eligibility fires, Liked Songs gains the track, Undo reverses it.
 - Push milestones, open PR under branch rulesets on the public repo.
 
+## Spotify browser E2E milestone
+
+Summary: execute a scenario table against the unpacked extension. Keep deterministic
+player fixtures separate from live Spotify account evidence. Authentication failures
+must fail the live job, never produce a green skip.
+
+1. Add regression tests for advertisement rejection before changing the DOM boundary.
+2. Add an agent-browser runner, controlled player fixture, persistent-profile live mode,
+   cleanup, screenshots, and machine-readable results.
+3. Run both browser jobs on GitHub Linux. Require their exact job names in the main
+   ruleset only after confirming they execute. Keep credentials out of artifacts.
+4. Verify the committed artifact, inspect browser screenshots, and document limitations.
+
 ## Open questions
 
 - None. All questions Q1-Q11 answered; any new fork gets a new ADR.
