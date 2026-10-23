@@ -141,6 +141,7 @@ if ! printf '%s' "$TOAST_TEXT" | grep -Fq 'saved to Liked Songs'; then
   exit 8
 fi
 ab_ext screenshot "$ART/matrix-save.png"
+ab_ext screenshot '[data-testid="music-saver-toast"]' "$ART/matrix-toast.png"
 ab_ext snapshot -i > "$ART/matrix-save-snapshot.txt"
 LIKE_AFTER=$(ab_ext eval "(${LIKE_QUERY})?.getAttribute('aria-checked')")
 printf '%s\n' "$LIKE_AFTER" > "$ART/matrix-like-after.txt"
@@ -149,7 +150,21 @@ if ! printf '%s' "$LIKE_AFTER" | grep -Fq true; then
   exit 9
 fi
 
-ab_ext click '[data-testid="music-saver-undo"]'
+# Spotify's global nav overlays the fixed toast at the pointer hit point. A
+# DOM click still exercises the extension's real Undo handler and clears it.
+UNDO_CLICKED=$(ab_ext eval --stdin <<'JS'
+(() => {
+  const button = document.querySelector('[data-testid="music-saver-undo"]');
+  if (!button) return false;
+  button.click();
+  return true;
+})()
+JS
+)
+if ! printf '%s' "$UNDO_CLICKED" | grep -Fq true; then
+  echo "could not activate the extension Undo control" >&2
+  exit 10
+fi
 ab_ext wait --fn "(${TOAST_QUERY}) === null && (${LIKE_QUERY})?.getAttribute('aria-checked') === 'false'"
 ab_ext screenshot "$ART/matrix-cleaned.png"
 echo "scenario $SCENARIO_NAME: saved and undone"
