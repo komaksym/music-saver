@@ -234,6 +234,36 @@ test("sampler ignores pauses and seeks", () => {
   assert.equal(s.observe({ track, playing: true, positionMs: 1000, wallMs: 33000 }), 0);
 });
 
+test("sampler credits quantized position jumps against accumulated playing time", () => {
+  // Spotify refreshes the progress bar in multi-second steps in background
+  // tabs while the watch loop polls every second. Each jump must credit in
+  // full: the audio played through the whole gap, not just the last second.
+  const s = new SoundedTimeSampler();
+  const track = { id: "t" };
+  let total = 0;
+  let pos = 0;
+  total += s.observe({ track, playing: true, positionMs: 0, wallMs: 0 });
+  for (let t = 1; t <= 15; t++) {
+    if (t % 5 === 0) pos += 5000;
+    total += s.observe({ track, playing: true, positionMs: pos, wallMs: t * 1000 });
+  }
+  assert.equal(total, 15000);
+});
+
+test("sampler caps forward-seek credit after unchanged samples", () => {
+  // A frozen progress bar banks playing wall time. A later seek must not pay
+  // that bank out at once: it establishes no listening, so the seek tick can
+  // credit at most its own wall gap.
+  const s = new SoundedTimeSampler();
+  const track = { id: "t" };
+  assert.equal(s.observe({ track, playing: true, positionMs: 0, wallMs: 0 }), 0);
+  for (let t = 1; t <= 5; t++) {
+    assert.equal(s.observe({ track, playing: true, positionMs: 0, wallMs: t * 1000 }), 0);
+  }
+  assert.equal(s.observe({ track, playing: true, positionMs: 55000, wallMs: 6000 }), 1000);
+  assert.equal(s.observe({ track, playing: true, positionMs: 56000, wallMs: 7000 }), 1000);
+});
+
 test("sampler resets on track switch and unreadable samples", () => {
   const s = new SoundedTimeSampler();
   s.observe({ track: { id: "a" }, playing: true, positionMs: 9000, wallMs: 0 });
