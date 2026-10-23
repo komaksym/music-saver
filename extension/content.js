@@ -63,7 +63,10 @@ export class WatchLoop {
     } catch (e) {
       return null;
     }
-    if (!sample || !sample.track || !(sample.durationMs > 0)) return null;
+    if (!sample || !sample.track || !(sample.durationMs > 0)) {
+      this.sampler.reset();
+      return null;
+    }
     if (sample.track.id !== this.lastPolledId) {
       this.lastPolledId = sample.track.id;
       this.lastRetryPollMs = now;

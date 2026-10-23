@@ -153,6 +153,10 @@ function rangeMs(range) {
 }
 
 export function readPlayback(doc, wallMs) {
+  for (const selector of ['[data-testid="ad-slot"]', '[data-testid="advertisement"]']) {
+    const ad = doc.querySelector(selector);
+    if (ad && ad.getClientRects().length > 0) return null;
+  }
   let playBtn = null;
   try {
     playBtn = doc.querySelector(SELECTORS.playPause);

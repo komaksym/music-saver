@@ -5,6 +5,8 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "build": "node scripts/bundle-content.mjs",
+    "e2e:fixture": "node scripts/spotify-e2e.mjs fixture",
+    "e2e:live": "node scripts/spotify-e2e.mjs live",
     "verify": "npm test && npm run build && node --check extension/background.js && node --check extension/content.js && node --check extension/content.bundle.js && node --check extension/options.js"
   }
 }
