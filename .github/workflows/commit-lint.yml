@@ -1,0 +1,42 @@
+name: commit-lint
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  commit-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch base
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch origin "$BASE_REF"
+      - name: Lint commit messages
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          base="origin/$BASE_REF"
+          fail=0
+          for sha in $(git log --format=%H --no-merges "$base..HEAD"); do
+            subj=$(git log --format=%s -1 "$sha")
+            body=$(git log --format=%b -1 "$sha")
+            if ! printf '%s' "$subj" | grep -Eq '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?(!)?: .+'; then
+              echo "::error::$sha subject must follow Conventional Commits: $subj"
+              fail=1
+            fi
+            if [ -z "$(printf '%s' "$body" | tr -d '[:space:]')" ]; then
+              echo "::error::$sha is missing a commit body"
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then exit 1; fi
+          echo All commit messages carry a subject and a body.

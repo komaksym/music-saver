@@ -16,16 +16,37 @@ jobs:
         env:
           BODY: ${{ github.event.pull_request.body }}
         run: |
-          echo "Checking PR body for required headings..."
+          echo Checking PR body for required headings...
+          # Strip fenced code blocks. A fence opened with N backticks or tildes
+          # closes only on a run of at least N of the same character, so a
+          # four-backtick fence does not swallow the headings that follow it
+          # and tilde-fenced blocks do not leak fake headings.
+          text=$(printf '%s' "$BODY" | awk '
+            {
+              line = $0
+              sub(/^[[:space:]]+/, "", line)
+              n = 0
+              c = substr(line, 1, 1)
+              if (c == "`" || c == "~") {
+                while (substr(line, n + 1, 1) == c) n++
+              }
+              if (open == 0) {
+                if (n >= 3) { open = n; fence = c; next }
+                print
+                next
+              }
+              if (c == fence && n >= open && substr(line, n + 1) ~ /^[[:space:]]*$/) open = 0
+            }
+          ')
           missing=0
-          for h in '## What changes' '## How to verify' '## Risk'; do
-            if ! printf '%s' "$BODY" | grep -Fq "$h"; then
+          for h in '## Summary' '## Validation' '## Risks / Notes' '## Breaking changes' '## Visual summary'; do
+            if ! printf '%s' "$text" | grep -Fqx -- "$h"; then
               echo "::error::Missing required heading: $h"
               missing=1
             fi
           done
           if [ "$missing" -ne 0 ]; then
-            echo "PR body must contain ## What changes, ## How to verify, and ## Risk (see .github/pull_request_template.md)."
+            echo "PR body must contain the five house headings."
             exit 1
           fi
-          echo "All required headings present."
+          echo All required headings present.
