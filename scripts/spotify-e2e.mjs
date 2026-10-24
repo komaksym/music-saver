@@ -245,34 +245,59 @@ function normalizeCookie(cookie) {
   };
 }
 
-function writeCookieBatch(cookies, label) {
-  const file = resolve(work, `${label}.json`);
-  writeFileSync(file, JSON.stringify(cookies), { mode: 0o600 });
-  try { ab('cookies', 'set', '--curl', file); }
-  finally { rmSync(file, { force: true }); }
+function cookieReason(output) {
+  if (/invalid cookie fields/i.test(output)) return 'invalid-fields';
+  if (/connect|no page|target closed|session|launch/i.test(output)) return 'no-browser-context';
+  return 'unclassified';
 }
 
-// Cookie names only. Values never reach logs, errors, or artifacts.
+// The CLI prints its own JSON on a failed set. Keep the failure class only, so a
+// cookie value can never reach a log, an error, or an artifact.
+function tryCookieBatch(cookies) {
+  const file = resolve(work, 'cookies.json');
+  writeFileSync(file, JSON.stringify(cookies), { mode: 0o600 });
+  try {
+    const raw = execFileSync('agent-browser', [...flags, 'cookies', 'set', '--curl', file], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
+    const result = JSON.parse(raw);
+    return result.success === false ? { ok: false, reason: cookieReason(String(result.error || '')) } : { ok: true };
+  } catch (error) {
+    return { ok: false, reason: cookieReason(`${(error && error.stdout) || ''}${(error && error.stderr) || ''}`) };
+  } finally {
+    rmSync(file, { force: true });
+  }
+}
+
+// Names, counts, scope, and expiry class only. Values never leave this function.
 function seedCookies(file) {
   const raw = JSON.parse(readFileSync(file, 'utf8'));
   const list = Array.isArray(raw) ? raw : raw && Array.isArray(raw.cookies) ? raw.cookies : null;
   if (!list || !list.length) throw new Error('Spotify cookie file contains no cookies');
   const cookies = list.map(normalizeCookie);
-  if (!cookies.some((cookie) => cookie.name === 'sp_dc')) throw new Error('dedicated Spotify session cookie sp_dc is missing');
-  try { writeCookieBatch(cookies, 'cookies'); }
-  catch {
-    // One rejected record must not lose the whole session; retry singly and
-    // keep the accepted cookies, then let the login wait decide.
-    const rejected = [];
-    let accepted = 0;
-    for (const cookie of cookies) {
-      try { writeCookieBatch([cookie], 'cookie'); accepted += 1; }
-      catch { rejected.push(cookie.name); }
-    }
-    if (rejected.includes('sp_dc')) throw new Error('the sp_dc session cookie was rejected by the browser');
-    if (!accepted) throw new Error('no Spotify cookie was accepted by the browser');
-    console.error(`cookies: ${accepted} accepted, rejected ${rejected.length} by name: ${rejected.join(',')}`);
+  const nowSeconds = Date.now() / 1000;
+  const details = cookies.map((cookie) => ({
+    name: cookie.name,
+    sameSite: cookie.sameSite,
+    expiry: cookie.expires < 0 ? 'session' : cookie.expires <= nowSeconds ? 'past' : 'future',
+    scope: cookie.domain ? 'domain' : 'url',
+  }));
+  const sp = details.find((cookie) => cookie.name === 'sp_dc');
+  if (!sp) throw new Error(`dedicated Spotify session cookie sp_dc is missing (names: ${details.map((cookie) => cookie.name).join(',')})`);
+  const batch = tryCookieBatch(cookies);
+  if (batch.ok) return { total: cookies.length, accepted: cookies.length, rejected: [], spDc: sp, batch: 'accepted' };
+  // One rejected record must not lose the whole session. Retry singly, keep the
+  // accepted cookies, and let the authenticated-page wait decide the outcome.
+  let accepted = 0;
+  const rejected = [];
+  for (const cookie of cookies) {
+    const result = tryCookieBatch([cookie]);
+    if (result.ok) accepted += 1;
+    else rejected.push(`${cookie.name}:${result.reason}`);
   }
+  if (rejected.some((entry) => entry.startsWith('sp_dc:'))) {
+    throw new Error(`the sp_dc session cookie was not accepted (expiry ${sp.expiry}, sameSite ${sp.sameSite}, batch ${batch.reason}); rejected ${rejected.join(' ')}`);
+  }
+  if (!accepted) throw new Error(`no Spotify cookie was accepted (batch ${batch.reason}); rejected ${rejected.join(' ')}`);
+  return { total: cookies.length, accepted, rejected, spDc: sp, batch: batch.reason };
 }
 
 // Booleans and fixed enums only. Never page text, titles, cookies, or profile data.
@@ -339,10 +364,17 @@ async function runLive(results) {
   const track = assertLiveTrack(process.env.SPOTIFY_E2E_TRACK_ID);
   const step = { phase: 'boot', scenario: null, selector: null };
   step.phase = 'authentication';
-  step.selector = 'user-widget';
-  open('about:blank');
-  if (process.env.SPOTIFY_E2E_COOKIE_FILE) seedCookies(process.env.SPOTIFY_E2E_COOKIE_FILE);
+  step.selector = 'spotify-origin';
+  // CDP cookie writes need a real page: about:blank and a fresh session both
+  // reject them as invalid cookie fields. Navigate first, then seed, then reload.
   open('https://open.spotify.com/');
+  if (process.env.SPOTIFY_E2E_COOKIE_FILE) {
+    const outcome = seedCookies(process.env.SPOTIFY_E2E_COOKIE_FILE);
+    results.push({ id: 'cookie-seed', mode: 'live', status: 'passed', assertions: [{ check: 'cookie-import', expected: 'sp_dc accepted', observed: outcome, ok: true }] });
+    console.log(`PASS live cookie-seed ${outcome.accepted}/${outcome.total} accepted, sp_dc ${outcome.spDc.expiry}, batch ${outcome.batch}`);
+  }
+  open('https://open.spotify.com/');
+  step.selector = 'user-widget';
   ab('wait', '--fn', "!!document.querySelector('[data-testid=\"user-widget-link\"], [data-testid=\"user-widget-avatar\"]') && !document.querySelector('[data-testid=\"login-button\"]')");
   const originalSettings = storage("chrome.storage.local.get('settings').then(x=>x.settings||null)");
   const url = `https://open.spotify.com/track/${track}`;

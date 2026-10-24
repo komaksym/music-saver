@@ -16,8 +16,12 @@
 <p id="status">Ready</p>
 <script>
 const params = new URLSearchParams(location.search);
-let liked = params.get('liked') === 'true';
-let pending = liked;
+const initiallyLiked = params.get('liked') === 'true';
+let trackId = params.get('id');
+const likedByTrack = { [trackId]: initiallyLiked };
+const liked = () => likedByTrack[trackId] === true;
+const setLiked = (value) => { likedByTrack[trackId] = value; };
+let pending = initiallyLiked;
 let playing = false;
 let position = 0;
 let last = performance.now();
@@ -32,7 +36,7 @@ const range = document.querySelector('input');
 const anchor = document.querySelector('[data-context-item-type]');
 anchor.href = 'spotify:track:' + params.get('id');
 function render() {
-  like.setAttribute('aria-checked', String(liked));
+  like.setAttribute('aria-checked', String(liked()));
   play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
   range.value = position;
   document.querySelector('#status').textContent =
@@ -47,23 +51,29 @@ function failing() {
 like.onclick = () => {
   opens++;
   if (failing()) { fails++; render(); return; }
-  if (!liked) { liked = true; saves++; render(); return; }
-  pending = liked;
+  if (!liked()) { setLiked(true); saves++; render(); return; }
+  pending = liked();
   const menu = document.createElement('div');
   menu.dataset.testid = 'context-menu';
   menu.innerHTML = '<button role="menuitemcheckbox" aria-checked="true"><span aria-labelledby="listrow-title-spotify:collection:tracks">Liked Songs</span></button><button type="submit">Done</button><button type="button">Cancel</button>';
   const box = menu.querySelector('[role]');
   box.onclick = () => { pending = !pending; box.setAttribute('aria-checked', String(pending)); };
-  menu.querySelector('[type=submit]').onclick = () => { liked = pending; menu.remove(); render(); };
+  menu.querySelector('[type=submit]').onclick = () => { setLiked(pending); menu.remove(); render(); };
   menu.querySelector('[type=button]').onclick = () => menu.remove();
   document.body.append(menu);
 };
 play.onclick = () => { playing = !playing; render(); };
 window.fixture = {
-  state: () => ({ liked, opens, saves, fails, playing, position, track: anchor.href }),
+  state: () => ({ liked: liked(), likedByTrack: { ...likedByTrack }, opens, saves, fails, playing, position, track: anchor.href }),
   seek: (ms) => { position = ms; render(); },
   ad: (active) => { document.querySelector('[data-testid=advertisement]').hidden = !active; },
-  track: (id) => { anchor.href = 'spotify:track:' + id; position = 0; render(); },
+  track: (id) => {
+    trackId = id;
+    if (!(id in likedByTrack)) likedByTrack[id] = initiallyLiked;
+    anchor.href = 'spotify:track:' + id;
+    position = 0;
+    render();
+  },
   recover: () => { failMode = 'none'; failedOnce = true; },
 };
 setInterval(() => {

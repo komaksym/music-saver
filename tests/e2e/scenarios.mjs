@@ -84,7 +84,7 @@ const cases = [
     id: 'failure', mode: 'failure', liked: false, fail: 'always',
     settings: settings(0.5, 1000),
     steps: [{ act: 'toggle-play' }, { act: 'wait', ms: 8000 }],
-    expected: ['fail'], expect: { saves: 0 }, retry: 1,
+    expected: ['fail'], expect: { opens: 1, saves: 0 }, retry: 1,
   },
   {
     // A failed save enters the retry queue; once the Like control works the
@@ -92,7 +92,7 @@ const cases = [
     id: 'retry-recovery', mode: 'retry-recovery', liked: false, fail: 'once',
     settings: settings(0.5, 1000),
     steps: [{ act: 'toggle-play' }, { act: 'wait', ms: 8000 }, { act: 'recover' }, { act: 'wait', ms: 30000 }],
-    expected: ['fail', 'save'], expect: { saves: 1 },
+    expected: ['fail', 'save'], expect: { opens: 2, saves: 1 },
   },
   {
     // Track B starts with its own sounded-time budget, so the sampler reset is
@@ -100,7 +100,7 @@ const cases = [
     id: 'track-change', mode: 'track-change', liked: false,
     settings: settings(0.5, 1000),
     steps: [{ act: 'toggle-play' }, { act: 'wait', ms: 8000 }, { act: 'track', id: 'trackb' }, { act: 'wait', ms: 8000 }],
-    expected: ['save', 'skip'], expect: { opens: 2, saves: 1 }, tracks: ['trackchange', 'trackb'],
+    expected: ['save', 'save'], expect: { opens: 2, saves: 2 }, tracks: ['trackchange', 'trackb'],
   },
 ];
 

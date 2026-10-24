@@ -18,9 +18,9 @@ The scenario table in `tests/e2e/scenarios.mjs` is data. Each record names its
 track IDs, the Like-control counters (`opens`, `saves`), and the retry-queue length.
 The runner interprets the steps and writes one assertion record per check. Negative
 cases assert that the Like control received no click at all. `retry-recovery` fails
-one save, then proves a later scheduled retry saves the same track and clears the
-queue. `track-change` proves each track gets its own sounded-time budget and a second
-decision. Screenshots and `results.json` record every result. The result includes the
+one save, then proves the next scheduled retry saves the same track, offers Undo,
+records the save after the durable log accepts it, and clears the queue. `track-change` saves two different tracks, so it proves each track has its own
+sounded-time budget, liked state, and identity. Screenshots and `results.json` record every result. The result includes the
 tested bundle's SHA-256 and the pinned harness version.
 
 The settings check drives the real options page. It sets the three controls through
