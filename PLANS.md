@@ -13,7 +13,8 @@ After this branch reaches `main`, ruleset 25511836 gains the required contexts `
 Never select `~ALL`, because required checks there also block ordinary feature-branch pushes.
 Do not require the nightly-only `live` job. Do not copy deletion or non-fast-forward protections.
 Do not merge or activate until an independent reviewer approves the exact deployment head.
-Document the fork limit, the manual re-run command, and the two-PR flow for a pinned file.
+Document the fork limit, the manual re-run command, and the two-PR flow for a pinned file or a script change.
+Port PR8's five-section pull request template, so a PR opened from the template already passes the heading check.
 
 ### Milestones
 

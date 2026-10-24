@@ -36,7 +36,9 @@ The verifier checks these rules:
 - The five PR8 headings appear outside fenced code. Empty or duplicate sections are not new failures.
 - Nonmerge commits have Conventional Commit subjects and nonempty bodies.
 - Required workflow files and five supporting scripts match the manifest.
-- Package script commands match PR8.
+- Package script commands match one approved script set in the manifest.
+- `.github/pull_request_template.md` is PR8's five-section template, so a PR opened from the template
+  already contains the required headings.
 - Checks have the required App identity and current head SHA.
 - Actions results belong to the expected repository, workflow path, PR, and permitted event.
 - The newest eligible PR workflow run and attempt must succeed. A newer push run on the
@@ -80,13 +82,19 @@ The final metadata reread and the completion re-run narrow this window but canno
 
 A fork pull request cannot pass `ready` or `trusted-pr-policy`.
 Both read the workflow run's `pull_requests` list, and GitHub fills that list only for head branches in the base repository.
-A fork-origin run therefore has no pull request number. The policy logs that case and posts no status,
-so the required context stays missing. The `ready` rollup finds no eligible run for the same reason and waits until its deadline.
+The `ready` rollup finds no eligible run and waits until its deadline.
+The policy behaves the same way, with one difference per trigger.
+On the `pull_request_target` event the fork PR number exists, so the policy polls, finds no eligible run, and posts `failure`.
+On a `workflow_run` completion from a fork the list is empty, so the policy logs the skip and posts nothing.
+Either way the required context never turns green.
 
-The policy reads the manifest and scripts from `main`. A PR that edits a pinned file, or adds or removes a `package.json` script,
+The policy reads the manifest and scripts from `main`. A PR that edits a pinned file, or changes a `package.json` script,
 fails until the manifest allows the new content. The agreed procedure uses two PRs.
-First land a manifest-only PR, because the manifest itself is not pinned. Add the new hash next to the old one, so other open PRs still pass.
-Then land the PR that edits the pinned file.
+First land a manifest-only PR, because the manifest itself is not pinned.
+Add the new file hash next to the old one, or add the complete new script set next to the current one, so other open PRs still pass.
+Then land the PR that edits the pinned file or the scripts.
+The manifest holds `files` as a list of approved hashes per path and `scripts` as a list of approved script sets.
+The verifier accepts the PR when it matches any entry in either list.
 
 The ported smoke job is a browser reachability check. It opens a public page headless and saves a snapshot.
 It does not run the player or the scenario matrix, so it does not prove that the extension saves a track.
