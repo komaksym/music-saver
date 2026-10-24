@@ -44,7 +44,7 @@ function ab(...args) {
     return result.data;
   } catch (error) {
     const detail = String(error.stdout || output || '') + String(error.stderr || '');
-    const reason = ['no song Like control', 'no Liked Songs row', 'no Cancel', 'strict mode violation', 'Timeout'].find(value => detail.includes(value));
+    const reason = ['no song Like control', 'no Liked Songs row', 'no Like menu submit', 'no Cancel', 'strict mode violation', 'Timeout'].find(value => detail.includes(value));
     throw new Error(`agent-browser ${args[0]} failed during ${phase}${reason ? ` (${reason})` : ''}. Browser output is suppressed to protect authentication.`, { cause: error });
   }
 }
@@ -67,6 +67,7 @@ function events() { return storage("chrome.storage.local.get(['activity-log','re
 const results = [];
 let server;
 let restore;
+let initialLiked;
 let cleanupError;
 try {
   open('about:blank');
@@ -180,7 +181,16 @@ try {
         if(!box) throw Error('no Liked Songs row');
         const before=box.getAttribute('aria-checked')==='true';
         if(${JSON.stringify(next)}!==null && before!==${JSON.stringify(next)}) {
-          box.click();menu.querySelector('button[type="submit"]').click();
+          box.click();
+          let done, removed;
+          for(let i=0;i<30;i++) {
+            done=document.querySelector('[data-testid="context-menu"] button[type="submit"]');
+            removed=${JSON.stringify(next)}===false && document.querySelector(${JSON.stringify(likeButton)})?.getAttribute('aria-checked')==='false';
+            if(done || removed)break;
+            await new Promise(r=>setTimeout(r,100));
+          }
+          if(done)done.click();
+          else if(!removed)throw Error('no Like menu submit');
           await new Promise(r=>setTimeout(r,500));
           return ${JSON.stringify(next)};
         }
@@ -190,14 +200,18 @@ try {
     }
     phase = 'initial Liked Songs state';
     ab('wait', likeButton);
-    const initialLiked = await liked(null);
+    initialLiked = await liked(null);
     restore = async () => {
+      phase = 'restore original state';
       storage("chrome.storage.local.set({settings:{enabled:false,thresholdRatio:0.9,minSoundedMs:60000}})");
-      open(url);
-      ab('wait', likeButton);
-      await liked(initialLiked);
-      assert.equal(await liked(null), initialLiked, 'original liked state restored');
-      restoreSettings();
+      try {
+        open(url);
+        ab('wait', likeButton);
+        await liked(initialLiked);
+        open(url);
+        ab('wait', likeButton);
+        assert.equal(await liked(null), initialLiked, 'original liked state restored after reload');
+      } finally { restoreSettings(); }
     };
     for (const startLiked of [false, true]) {
       for (const reached of [false, true]) {
@@ -269,6 +283,6 @@ try {
   try { ab('close'); } catch { cleanupError ||= 'browser close failed'; process.exitCode = 1; }
   server?.kill?.();
   const bundleSha256 = createHash('sha256').update(readFileSync(resolve(root, 'extension/content.bundle.js'))).digest('hex');
-  writeFileSync(resolve(artifacts, 'results.json'), JSON.stringify({ mode, bundleSha256, results, cleanupError, passed: process.exitCode !== 1, timestamp: new Date().toISOString() }, null, 2));
+  writeFileSync(resolve(artifacts, 'results.json'), JSON.stringify({ mode, bundleSha256, results, initialLiked, cleanupError, passed: process.exitCode !== 1, timestamp: new Date().toISOString() }, null, 2));
   rmSync(work, { recursive: true, force: true });
 }
