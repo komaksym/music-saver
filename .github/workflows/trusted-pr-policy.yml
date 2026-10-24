@@ -4,6 +4,10 @@ on:
   # Only main-owned scripts run. PR content is read as API data, never executed.
   pull_request_target: # zizmor: ignore[dangerous-triggers]
     types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft]
+  # A verdict posted before cubic-gate or the Cubic App reports stays red until this re-runs it.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [cubic-gate, pr-ready]
+    types: [completed]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -14,7 +18,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: trusted-pr-policy-${{ github.event.pull_request.number || inputs.pr_number }}
+  group: trusted-pr-policy-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || inputs.pr_number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -28,17 +32,31 @@ jobs:
       actions: read
       statuses: write
     steps:
+      - name: Resolve the pull request to evaluate
+        id: pr
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || inputs.pr_number }}
+        run: |
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No pull request on this run. GitHub leaves pull_requests empty for fork-origin runs, so this run evaluates nothing."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: steps.pr.outputs.skip != 'true'
         with:
           repository: komaksym/music-saver
           ref: main
           persist-credentials: false
           sparse-checkout: scripts
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.pr.outputs.skip != 'true'
         with:
           node-version: '22'
       - name: Inspect PR metadata without running PR code
+        if: steps.pr.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: node scripts/check-trusted-pr-policy.mjs --publish
