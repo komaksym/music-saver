@@ -2,6 +2,12 @@ name: spotify-e2e-live
 
 on:
   workflow_dispatch:
+    inputs:
+      decision_clips:
+        description: Record only the automatic save and skip decisions
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: '17 3 * * *'
 
@@ -50,6 +56,7 @@ jobs:
           SPOTIFY_E2E_TRACK_ID: ${{ vars.SPOTIFY_E2E_TRACK_ID || '7LoBfKLpz4BGrxCuOzAKRz' }}
           SPOTIFY_E2E_RECORD: '1'
           SPOTIFY_E2E_MUTATE_LIKED: '1'
+          SPOTIFY_E2E_DECISION_CLIPS: ${{ inputs.decision_clips && '1' || '0' }}
         run: PATH="$PWD/node_modules/.bin:$PATH" xvfb-run --auto-servernum node scripts/spotify-e2e.mjs live
       - name: Upload sanitized live browser proof
         if: always()

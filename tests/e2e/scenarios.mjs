@@ -22,6 +22,10 @@ export const liveScenarios = [
   { id: 'undo', startLiked: false, reached: true, undo: true },
 ];
 
+export function liveScenariosFor(decisionClips = false) {
+  return decisionClips ? liveScenarios.filter(({ id }) => ['unliked-reached', 'liked-reached'].includes(id)) : liveScenarios;
+}
+
 export function assertLiveTrack(value) {
   if (!/^[A-Za-z0-9]{22}$/.test(value || '')) throw new Error('SPOTIFY_E2E_TRACK_ID must name a 22-character Spotify song ID');
   return value;

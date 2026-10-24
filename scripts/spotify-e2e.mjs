@@ -6,7 +6,7 @@ import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } f
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { scenarios, liveScenarios, assertLiveTrack } from '../tests/e2e/scenarios.mjs';
+import { scenarios, liveScenariosFor, assertLiveTrack } from '../tests/e2e/scenarios.mjs';
 import { importCookies } from './spotify-e2e-cookies.mjs';
 import { assertSongIdentity } from './spotify-e2e-identity.mjs';
 
@@ -86,7 +86,8 @@ let server;
 let restore;
 let initialLiked;
 let cleanupError;
-const recording = mode === 'live' && process.env.SPOTIFY_E2E_RECORD === '1' ? resolve(artifacts, 'agent-session.webm') : null;
+const decisionClips = mode === 'live' && process.env.SPOTIFY_E2E_DECISION_CLIPS === '1';
+const recording = mode === 'live' && !decisionClips && process.env.SPOTIFY_E2E_RECORD === '1' ? resolve(artifacts, 'agent-session.webm') : null;
 let recordingStarted = false;
 try {
   ab('open', 'about:blank');
@@ -313,7 +314,7 @@ try {
       assertRequestedSong(`after ${action}`);
       return value;
     }
-    for (const { id: name, startLiked, reached, undo } of liveScenarios) {
+    for (const { id: name, startLiked, reached, undo } of liveScenariosFor(decisionClips)) {
       phase = name;
       startRequestedSong();
       evaluate(`window.__msE2EDocument = ${JSON.stringify(session)}`);
@@ -353,6 +354,13 @@ try {
       evaluate('window.__msE2EProgress = null');
       const startedAt = Date.now();
       assertRequestedSong('before live playback');
+      const expected = reached ? (startLiked ? 'skip' : 'save') : null;
+      const decisionRecording = decisionClips ? resolve(artifacts, `decision-${startLiked ? 'skip' : 'save'}.webm`) : null;
+      if (decisionRecording) {
+        phase = `${name} decision recording`;
+        ab('record', 'start', decisionRecording, '--fps', '10', '--cursor');
+        recordingStarted = true;
+      }
       ab('click', playButton);
       ab('wait', '--fn', progressingRequestedSong);
       assertRequestedSong('after extension mutation window');
@@ -374,11 +382,19 @@ try {
       const afterUndo = undo ? await guardedLiked(null) : undefined;
       const after = undo ? afterUndo : await guardedLiked(null);
       if (undo) assert.equal(afterUndo, false, 'live Undo removes the saved song');
-      screenshot(name);
       pausePlayer();
+      if (decisionRecording) {
+        ab('tab', 'options');
+        ab('open', options);
+        ab('wait', '--fn', `document.querySelector('#activity-log')?.innerText.includes(${JSON.stringify(expected)})`);
+        wait(2500);
+        ab('record', 'stop');
+        recordingStarted = false;
+        ab('tab', 'player');
+      }
+      screenshot(name);
       const observed = events();
       assertSamePlayer();
-      const expected = reached ? (startLiked ? 'skip' : 'save') : null;
       if (!undo) assert.equal(after, startLiked || reached, `${name}: live liked state`);
       assert.deepEqual(observed.recent.filter(event=>event.ts>=startedAt).map(e=>e.kind), undo ? ['save', 'undo'] : expected ? [expected] : [], `${name}: extension activity`);
       assert.equal(observed.pending.length, 0, `${name}: no failed actions`);
@@ -391,6 +407,7 @@ try {
         progressMs: endPosition-startPosition,
         documentPreserved: true,
         target: requestedSong,
+        ...(decisionRecording ? { recording: decisionRecording } : {}),
         ...(undo ? { savedBeforeUndo } : {}),
       });
       console.log(`PASS live ${name}`);
@@ -450,6 +467,6 @@ try {
   try { ab('close'); } catch { cleanupError ||= 'browser close failed'; process.exitCode = 1; }
   server?.kill?.();
   const bundleSha256 = createHash('sha256').update(readFileSync(resolve(root, 'extension/content.bundle.js'))).digest('hex');
-  writeFileSync(resolve(artifacts, 'results.json'), JSON.stringify({ mode, bundleSha256, recording: recordingStarted ? recording : null, results, initialLiked, cleanupError, passed: process.exitCode !== 1, timestamp: new Date().toISOString() }, null, 2));
+  writeFileSync(resolve(artifacts, 'results.json'), JSON.stringify({ mode, bundleSha256, recording, recordings: results.map(result => result.recording).filter(Boolean), results, initialLiked, cleanupError, passed: process.exitCode !== 1, timestamp: new Date().toISOString() }, null, 2));
   rmSync(work, { recursive: true, force: true });
 }
