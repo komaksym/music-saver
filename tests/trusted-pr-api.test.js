@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { inspect } from '../scripts/check-trusted-pr-policy.mjs';
+import { createApi, inspect } from '../scripts/check-trusted-pr-policy.mjs';
 
 const repo = 'komaksym/music-saver';
 const sha = 'a'.repeat(40);
@@ -63,4 +63,39 @@ test('propagates API permissions errors rather than treating them as missing pol
   const f = fixture();
   f.overrides.set('/contents/', () => { const error = new Error('denied'); error.status = 403; throw error; });
   await assert.rejects(inspect(f.options), /denied/);
+});
+
+function reply(status, body, headers = {}) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: '',
+    headers: { get: name => headers[name.toLowerCase()] ?? null },
+    text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
+    json: async () => (typeof body === 'string' ? JSON.parse(body) : body),
+  };
+}
+
+function stubFetch(t, replies) {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, method: options.method ?? 'GET' });
+    if (!replies.length) throw new Error(`unexpected request ${options.method ?? 'GET'} ${url}`);
+    return replies.shift();
+  };
+  t.after(() => { globalThis.fetch = original; });
+  return calls;
+}
+
+test('reports the failing request and the message GitHub sent', async t => {
+  stubFetch(t, [reply(403, { message: 'Resource not accessible by integration' })]);
+  const api = createApi({ token: 'token' });
+  await assert.rejects(api('/repos/o/r/statuses/abc', { method: 'POST', body: '{}' }), error => {
+    assert.equal(error.status, 403);
+    assert.equal(error.method, 'POST');
+    assert.equal(error.path, '/repos/o/r/statuses/abc');
+    assert.equal(error.message, 'POST /repos/o/r/statuses/abc failed with 403: Resource not accessible by integration');
+    return true;
+  });
 });

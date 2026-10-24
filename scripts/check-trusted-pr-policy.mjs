@@ -38,27 +38,45 @@ export async function inspect({ api, repo, number, policy }) {
   return { head: pull.head.sha, errors: evaluate({ pull, files, commits, checks, runs }, policy) };
 }
 
+function parseBody(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function errorMessage(response, text) {
+  const body = parseBody(text);
+  if (typeof body?.message === 'string' && body.message) return body.message;
+  return text.trim() || response.statusText || 'no response body';
+}
+
+export function createApi({ token }) {
+  return async function api(path, options = {}) {
+    const method = options.method ?? 'GET';
+    const response = await globalThis.fetch(`https://api.github.com${path}`, {
+      ...options,
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' },
+    });
+    if (response.ok) return response.json();
+    const message = errorMessage(response, await response.text());
+    throw Object.assign(new Error(`${method} ${path} failed with ${response.status}: ${message}`), {
+      status: response.status, method, path, githubMessage: message,
+    });
+  };
+}
+
 async function main() {
   const repo = process.env.GITHUB_REPOSITORY;
   const number = Number(process.env.PR_NUMBER);
   if (repo !== 'komaksym/music-saver' || !Number.isSafeInteger(number) || number < 1) throw new Error('Expected music-saver and a positive PR number');
   const token = process.env.GH_TOKEN;
   if (!token) throw new Error('GH_TOKEN is required');
-  const api = async (path, options = {}) => {
-    const response = await globalThis.fetch(`https://api.github.com${path}`, {
-      ...options,
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' },
-    });
-    if (!response.ok) {
-      const error = new Error(`GitHub API returned ${response.status}`);
-      error.status = response.status;
-      throw error;
-    }
-    return response.json();
-  };
   const policy = JSON.parse(await readFile(new URL('./trusted-pr-policy.json', import.meta.url), 'utf8'));
   const publish = process.argv.includes('--publish');
+  const api = createApi({ token });
   let head;
   const status = (state, description) => api(`/repos/${repo}/statuses/${head}`, {
     method: 'POST', body: JSON.stringify({ state, context: 'trusted-pr-policy', description,
