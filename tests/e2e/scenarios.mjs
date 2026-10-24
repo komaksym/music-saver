@@ -91,7 +91,7 @@ const cases = [
     // scheduled retry saves the same track without another eligibility pass.
     id: 'retry-recovery', mode: 'retry-recovery', liked: false, fail: 'once',
     settings: settings(0.5, 1000),
-    steps: [{ act: 'toggle-play' }, { act: 'wait', ms: 8000 }, { act: 'recover' }, { act: 'wait', ms: 7000 }],
+    steps: [{ act: 'toggle-play' }, { act: 'wait', ms: 8000 }, { act: 'recover' }, { act: 'wait', ms: 30000 }],
     expected: ['fail', 'save'], expect: { saves: 1 },
   },
   {

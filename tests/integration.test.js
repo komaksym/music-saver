@@ -325,21 +325,14 @@ test("a retry that fails again logs no extra event and stays queued", async () =
   });
   await listenThrough(loop, doc, 190000);
   assert.deepEqual(events.map((e) => e.kind), ["fail"]);
-  for (let t = 200000; t <= 220000; t += 10000) {
-    clock.now = t;
-    doc.state.positionMs = t;
-    await loop.tick();
-  }
+  clock.now = 200000;
+  doc.state.positionMs = 200000;
+  await loop.tick();
   await flush();
-  assert.equal(saveCalls, 4, "the initial save plus one retry per poll");
+  assert.equal(saveCalls, 2, "the initial save plus the 30s retry poll");
   assert.deepEqual(events.map((e) => e.kind), ["fail"]);
   const due = await chrome.send({ type: "ms-due", nowMs: 600000 });
   assert.deepEqual(due.due.map((i) => i.id), ["abc123"]);
-});
-
-test("retry polling is a short interval, so a failed save recovers without a 30s wait", () => {
-  const loop = WatchLoop.create({ doc: fakeDoc(), settings: {}, sendMessage: async () => null });
-  assert.equal(loop.retryPollMs, 5000);
 });
 
 test("disabling settings stops the loop from saving", async () => {

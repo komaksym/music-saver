@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, generateKeyPairSync } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -99,16 +100,17 @@ function events() { return storage("chrome.storage.local.get(['activity-log','re
 
 function pollUntil(read, accept, label, timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
+  let last;
   for (;;) {
-    const value = read();
-    if (accept(value)) return value;
-    if (Date.now() >= deadline) throw new Error(`${label}: condition not reached in ${timeoutMs}ms`);
+    last = read();
+    if (accept(last)) return last;
+    if (Date.now() >= deadline) throw new Error(`${label}: condition not reached in ${timeoutMs}ms; last observed ${JSON.stringify(last)}`);
     wait(250);
   }
 }
 
 function check(assertions, name, expected, observed) {
-  const ok = JSON.stringify(expected) === JSON.stringify(observed);
+  const ok = isDeepStrictEqual(expected, observed);
   assertions.push({ check: name, expected, observed, ok });
   assert.ok(ok, `${name}: expected ${JSON.stringify(expected)}, observed ${JSON.stringify(observed)}`);
 }
@@ -181,15 +183,27 @@ function settingsCase() {
     (values) => values[0] === '90' && values[1] === '60' && values[2] === true,
     'options page loaded its settings',
   );
+  const readControls = () => evaluate("[document.querySelector('#threshold').value,document.querySelector('#floor').value,document.querySelector('#enabled').checked]");
+  // fill fires input only; the options page listens for change, which the blur
+  // a Tab produces commits through the same path a person uses.
   ab('fill', '#threshold', '50');
+  ab('press', 'Tab');
   ab('fill', '#floor', '2');
+  ab('press', 'Tab');
   ab('click', '#enabled');
+  ab('press', 'Tab');
+  const controls = pollUntil(
+    readControls,
+    (values) => values[0] === '50' && values[1] === '2' && values[2] === false,
+    'settings inputs hold the typed values after blur',
+  );
   const expectedSettings = { thresholdRatio: 0.5, minSoundedMs: 2000, enabled: false };
   const stored = pollUntil(
     () => evaluate("chrome.storage.local.get('settings').then(x=>x.settings)"),
-    (value) => JSON.stringify(value) === JSON.stringify(expectedSettings),
+    (value) => isDeepStrictEqual(value, expectedSettings),
     'settings form persisted through the real inputs',
   );
+  assertions.push({ check: 'settings-controls', expected: ['50', '2', false], observed: controls, ok: true });
   check(assertions, 'settings-form', expectedSettings, stored);
   storage(`chrome.storage.local.set({'activity-log':[{ts:Date.now(),kind:'save',trackId:'settingscase',detail:''}],'retry-queue':[{id:'settingscase',uri:'spotify:track:settingscase',kind:'save',attempts:0,nextDueMs:0,seq:0}]})`);
   open(options);
@@ -211,28 +225,54 @@ function settingsCase() {
   return { id: 'settings', mode: 'settings', status: 'passed', assertions };
 }
 
+const SAME_SITE = { strict: 'Strict', lax: 'Lax', none: 'None', no_restriction: 'None', unspecified: 'Lax' };
+
+function normalizeCookie(cookie) {
+  if (!cookie || typeof cookie.name !== 'string' || typeof cookie.value !== 'string') throw new Error('cookie entry needs name and value');
+  if (!cookie.domain && !cookie.url) throw new Error('cookie entry needs a domain or url');
+  const seconds = [cookie.expires, cookie.expirationDate].find((value) => Number.isFinite(Number(value)));
+  const expires = seconds === undefined ? -1 : Number(seconds) > 1e12 ? Math.round(Number(seconds) / 1000) : Number(seconds);
+  const sameSite = SAME_SITE[String(cookie.sameSite ?? '').toLowerCase()] || 'Lax';
+  return {
+    name: cookie.name,
+    value: cookie.value,
+    path: cookie.path || '/',
+    secure: cookie.secure !== false || sameSite === 'None',
+    httpOnly: !!cookie.httpOnly,
+    sameSite,
+    ...(cookie.domain ? { domain: cookie.domain } : { url: cookie.url }),
+    expires,
+  };
+}
+
+function writeCookieBatch(cookies, label) {
+  const file = resolve(work, `${label}.json`);
+  writeFileSync(file, JSON.stringify(cookies), { mode: 0o600 });
+  try { ab('cookies', 'set', '--curl', file); }
+  finally { rmSync(file, { force: true }); }
+}
+
+// Cookie names only. Values never reach logs, errors, or artifacts.
 function seedCookies(file) {
   const raw = JSON.parse(readFileSync(file, 'utf8'));
   const list = Array.isArray(raw) ? raw : raw && Array.isArray(raw.cookies) ? raw.cookies : null;
   if (!list || !list.length) throw new Error('Spotify cookie file contains no cookies');
-  const cookies = list.map((cookie) => {
-    if (!cookie || typeof cookie.name !== 'string' || typeof cookie.value !== 'string') throw new Error('cookie entry needs name and value');
-    if (!cookie.domain && !cookie.url) throw new Error('cookie entry needs a domain or url');
-    return {
-      name: cookie.name,
-      value: cookie.value,
-      path: cookie.path || '/',
-      secure: cookie.secure !== false,
-      httpOnly: !!cookie.httpOnly,
-      sameSite: cookie.sameSite || 'Lax',
-      ...(cookie.domain ? { domain: cookie.domain } : { url: cookie.url }),
-      expires: Number.isFinite(Number(cookie.expires)) ? Number(cookie.expires) : -1,
-    };
-  });
-  const seeded = resolve(work, 'cookies.json');
-  writeFileSync(seeded, JSON.stringify(cookies), { mode: 0o600 });
-  try { ab('cookies', 'set', '--curl', seeded); }
-  finally { rmSync(seeded, { force: true }); }
+  const cookies = list.map(normalizeCookie);
+  if (!cookies.some((cookie) => cookie.name === 'sp_dc')) throw new Error('dedicated Spotify session cookie sp_dc is missing');
+  try { writeCookieBatch(cookies, 'cookies'); }
+  catch {
+    // One rejected record must not lose the whole session; retry singly and
+    // keep the accepted cookies, then let the login wait decide.
+    const rejected = [];
+    let accepted = 0;
+    for (const cookie of cookies) {
+      try { writeCookieBatch([cookie], 'cookie'); accepted += 1; }
+      catch { rejected.push(cookie.name); }
+    }
+    if (rejected.includes('sp_dc')) throw new Error('the sp_dc session cookie was rejected by the browser');
+    if (!accepted) throw new Error('no Spotify cookie was accepted by the browser');
+    console.error(`cookies: ${accepted} accepted, rejected ${rejected.length} by name: ${rejected.join(',')}`);
+  }
 }
 
 // Booleans and fixed enums only. Never page text, titles, cookies, or profile data.
@@ -298,10 +338,10 @@ async function runFixture(results) {
 async function runLive(results) {
   const track = assertLiveTrack(process.env.SPOTIFY_E2E_TRACK_ID);
   const step = { phase: 'boot', scenario: null, selector: null };
-  if (process.env.SPOTIFY_E2E_COOKIE_FILE) seedCookies(process.env.SPOTIFY_E2E_COOKIE_FILE);
   step.phase = 'authentication';
   step.selector = 'user-widget';
   open('about:blank');
+  if (process.env.SPOTIFY_E2E_COOKIE_FILE) seedCookies(process.env.SPOTIFY_E2E_COOKIE_FILE);
   open('https://open.spotify.com/');
   ab('wait', '--fn', "!!document.querySelector('[data-testid=\"user-widget-link\"], [data-testid=\"user-widget-avatar\"]') && !document.querySelector('[data-testid=\"login-button\"]')");
   const originalSettings = storage("chrome.storage.local.get('settings').then(x=>x.settings||null)");

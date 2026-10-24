@@ -665,7 +665,6 @@ class WatchLoop {
     this.settings = opts.settings;
     this.nowMs = opts.nowMs || (() => Date.now());
     this.pollMs = opts.pollMs || 1000;
-    this.retryPollMs = opts.retryPollMs || 5000;
     this.send = opts.send || null;
     this.timer = null;
     this.busy = false;
@@ -713,7 +712,7 @@ class WatchLoop {
       this.lastPolledId = sample.track.id;
       this.lastRetryPollMs = now;
       await this.pollRetries(sample.track, now);
-    } else if (now - this.lastRetryPollMs > this.retryPollMs) {
+    } else if (now - this.lastRetryPollMs > 30000) {
       this.lastRetryPollMs = now;
       await this.pollRetries(sample.track, now);
     }
