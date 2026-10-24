@@ -182,16 +182,17 @@ try {
       trackId: track,
       ...evaluate(`({
       title: document.querySelector('main h1')?.textContent.trim(),
-      artist: [...document.querySelectorAll('main a[href*="/artist/"]')].map(link => link.textContent.trim()).find(Boolean)
+      artist: [...document.querySelectorAll('main a[href*="/artist/"]')].map(link => link.textContent.trim()).find(Boolean),
+      albumHref: document.querySelector('main a[href*="/album/"]')?.getAttribute('href') || null
     })`),
     };
-    assert(requestedSong.title && requestedSong.artist, 'requested track page identifies its title and artist');
+    assert(requestedSong.title && requestedSong.artist && requestedSong.albumHref, 'requested track page identifies its title, artist, and album');
     if (recording) {
       phase = 'video recording';
       ab('record', 'start', recording, '--fps', '10', '--cursor');
       recordingStarted = true;
     }
-    const playingRequestedSong = `document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]')?.textContent.trim() === ${JSON.stringify(requestedSong.title)} && document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"]')?.textContent.trim() === ${JSON.stringify(requestedSong.artist)} && (${nowPlayingTrackId}) === ${JSON.stringify(requestedSong.trackId)} && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label') === 'Pause'`;
+    const playingRequestedSong = `document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]')?.textContent.trim() === ${JSON.stringify(requestedSong.title)} && document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"]')?.textContent.trim() === ${JSON.stringify(requestedSong.artist)} && document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-link"]')?.getAttribute('href') === ${JSON.stringify(requestedSong.albumHref)} && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label') === 'Pause'`;
     const progressingRequestedSong = `(() => {
       const position = Number(document.querySelector('[data-testid="playback-progressbar"] input')?.value);
       const previous = window.__msE2EProgress;
@@ -214,6 +215,7 @@ try {
         const ids=new Set(candidates.map(value=>value.match(pattern)?.[1]).filter(Boolean));
         return {
           trackId: ids.size===1 ? [...ids][0] : null,
+          albumHref: link?.getAttribute('href') || null,
           title: document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]')?.textContent.trim() || null,
           artist: document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"]')?.textContent.trim() || null
         };
@@ -229,6 +231,7 @@ try {
       pausePlayer();
       open(url);
       ab('wait', playButton);
+      assert.equal(evaluate('location.pathname'), `/track/${track}`, 'exact dedicated track page is active');
       evaluate('window.__msE2EProgress = null');
       ab('click', playButton);
       ab('wait', '--fn', progressingRequestedSong);

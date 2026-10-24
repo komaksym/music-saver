@@ -6,6 +6,7 @@ const target = {
   trackId: "7LoBfKLpz4BGrxCuOzAKRz",
   title: "Dedicated test song",
   artist: "Dedicated test artist",
+  albumHref: "/album/dedicated-album",
 };
 
 test("accepts the exact dedicated song", () => {
@@ -19,10 +20,25 @@ test("rejects a different track with the same title and artist", () => {
   );
 });
 
-test("fails closed when the now-playing track ID is missing", () => {
+test("accepts a player without a track link when title, artist, and album match", () => {
+  assert.doesNotThrow(() => assertSongIdentity(target, {
+    title: target.title,
+    artist: target.artist,
+    albumHref: target.albumHref,
+  }));
+});
+
+test("fails closed when the player has neither a matching ID nor album", () => {
   assert.throws(
     () => assertSongIdentity(target, { title: target.title, artist: target.artist }),
-    /now-playing track ID/,
+    /now-playing album/,
+  );
+});
+
+test("rejects an album mismatch", () => {
+  assert.throws(
+    () => assertSongIdentity(target, { ...target, albumHref: "/album/another-album" }),
+    /now-playing album/,
   );
 });
 
