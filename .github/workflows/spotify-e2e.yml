@@ -28,6 +28,8 @@ jobs:
         run: npm run build
       - name: Install browser harness
         run: npx --no-install agent-browser install --with-deps
+      - name: Install video recorder
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - name: Restore dedicated Spotify authentication
         env:
           COOKIES_B64: ${{ secrets.SPOTIFY_E2E_COOKIES_B64 }}
