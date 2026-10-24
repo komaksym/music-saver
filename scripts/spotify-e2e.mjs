@@ -8,6 +8,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scenarios, liveScenarios, assertLiveTrack } from '../tests/e2e/scenarios.mjs';
 import { importCookies } from './spotify-e2e-cookies.mjs';
+import { assertSongIdentity } from './spotify-e2e-identity.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const mode = process.argv[2];
@@ -136,6 +137,7 @@ try {
     }
   } else {
     const track = assertLiveTrack(process.env.SPOTIFY_E2E_TRACK_ID);
+    assert.equal(process.env.SPOTIFY_E2E_MUTATE_LIKED, '1', 'Live E2E permission required: set SPOTIFY_E2E_MUTATE_LIKED=1');
     phase = 'cookie import';
     if (process.env.SPOTIFY_E2E_COOKIE_FILE) {
       importCookies(JSON.parse(readFileSync(resolve(process.env.SPOTIFY_E2E_COOKIE_FILE), 'utf8')), ab);
@@ -167,17 +169,27 @@ try {
     phase = 'Spotify track play button';
     open(url);
     ab('wait', playButton);
-    requestedSong = evaluate(`({
+    requestedSong = {
+      trackId: track,
+      ...evaluate(`({
       title: document.querySelector('main h1')?.textContent.trim(),
       artist: [...document.querySelectorAll('main a[href*="/artist/"]')].map(link => link.textContent.trim()).find(Boolean)
-    })`);
+    })`),
+    };
     assert(requestedSong.title && requestedSong.artist, 'requested track page identifies its title and artist');
     if (recording) {
       phase = 'video recording';
       ab('record', 'start', recording, '--fps', '10', '--cursor');
       recordingStarted = true;
     }
-    const playingRequestedSong = `document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]')?.textContent.trim() === ${JSON.stringify(requestedSong.title)} && document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"]')?.textContent.trim() === ${JSON.stringify(requestedSong.artist)} && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label') === 'Pause'`;
+    const nowPlayingTrackId = `(() => {
+      const widget=document.querySelector('[data-testid="now-playing-widget"]');
+      const anchors=widget ? [...widget.querySelectorAll('a[data-testid="context-link"][data-context-item-type="track"], a[href*="spotify:track:"], a[href*="spotify%3Atrack%3A"], a[href*="/track/"]')] : [];
+      const pattern=new RegExp('(?:spotify:track:|spotify%3atrack%3a|/track/)([A-Za-z0-9]{22})(?:[/?#]|$)','i');
+      const ids=new Set(anchors.map(a=>a.href).map(href=>href.match(pattern)?.[1]).filter(Boolean));
+      return ids.size===1 ? [...ids][0] : null;
+    })()`;
+    const playingRequestedSong = `document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]')?.textContent.trim() === ${JSON.stringify(requestedSong.title)} && document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"]')?.textContent.trim() === ${JSON.stringify(requestedSong.artist)} && (${nowPlayingTrackId}) === ${JSON.stringify(requestedSong.trackId)} && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label') === 'Pause'`;
     const progressingRequestedSong = `(() => {
       const position = Number(document.querySelector('[data-testid="playback-progressbar"] input')?.value);
       const previous = window.__msE2EProgress;
@@ -189,6 +201,35 @@ try {
         ab('click', '[data-testid="control-button-playpause"]');
         ab('wait', '--fn', "document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')==='Play'");
       }
+    }
+    function readNowPlayingIdentity() {
+      return evaluate(`(() => {
+        const widget=document.querySelector('[data-testid="now-playing-widget"]');
+        const anchors=widget ? [...widget.querySelectorAll('a[data-testid="context-link"][data-context-item-type="track"], a[href*="spotify:track:"], a[href*="spotify%3Atrack%3A"], a[href*="/track/"]')] : [];
+        const pattern=new RegExp('(?:spotify:track:|spotify%3atrack%3a|/track/)([A-Za-z0-9]{22})(?:[/?#]|$)','i');
+        const ids=new Set(anchors.map(a=>a.href).map(href=>href.match(pattern)?.[1]).filter(Boolean));
+        return {
+          trackId: ids.size===1 ? [...ids][0] : null,
+          title: document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]')?.textContent.trim() || null,
+          artist: document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"]')?.textContent.trim() || null
+        };
+      })()`);
+    }
+    function assertRequestedSong(action) {
+      const actual = readNowPlayingIdentity();
+      try { assertSongIdentity(requestedSong, actual); }
+      catch (error) { throw new Error(`${action}: ${error.message}`, { cause: error }); }
+      return actual;
+    }
+    function startRequestedSong() {
+      pausePlayer();
+      open(url);
+      ab('wait', playButton);
+      evaluate('window.__msE2EProgress = null');
+      ab('click', playButton);
+      ab('wait', '--fn', progressingRequestedSong);
+      pausePlayer();
+      return assertRequestedSong('requested song selected');
     }
     evaluate('window.__msE2EProgress = null');
     ab('click', playButton);
@@ -233,18 +274,18 @@ try {
     }
     phase = 'initial Liked Songs state';
     ab('wait', likeButton);
-    initialLiked = await liked(null);
+    initialLiked = await guardedLiked(null);
     restore = async () => {
       phase = 'restore original state';
       pausePlayer();
       storage("chrome.storage.local.set({settings:{enabled:false,thresholdRatio:0.9,minSoundedMs:60000}})");
       try {
-        open(url);
+        startRequestedSong();
         ab('wait', likeButton);
-        await liked(initialLiked);
-        open(url);
+        await guardedLiked(initialLiked);
+        startRequestedSong();
         ab('wait', likeButton);
-        assert.equal(await liked(null), initialLiked, 'original liked state restored after reload');
+        assert.equal(await guardedLiked(null), initialLiked, 'original liked state restored after reload');
         screenshot('restored');
       } finally { restoreSettings(); }
     };
@@ -252,14 +293,22 @@ try {
     function assertSamePlayer() {
       assert.equal(evaluate('window.__msE2EDocument'), session, 'options access preserves the Spotify document');
     }
+    async function guardedLiked(next) {
+      const action = next === null ? 'Liked-state inspection' : `Liked-state change to ${next}`;
+      assertRequestedSong(`before ${action}`);
+      const value = await liked(next);
+      assertRequestedSong(`after ${action}`);
+      return value;
+    }
     for (const { id: name, startLiked, reached, undo } of liveScenarios) {
       phase = name;
-      pausePlayer();
+      startRequestedSong();
+      evaluate(`window.__msE2EDocument = ${JSON.stringify(session)}`);
       configure({ enabled: false, thresholdRatio: 0.01, minSoundedMs: 60000 });
       assertSamePlayer();
       ab('wait', likeButton);
-      await liked(startLiked);
-      assert.equal(await liked(null), startLiked, 'live precondition');
+      await guardedLiked(startLiked);
+      assert.equal(await guardedLiked(null), startLiked, 'live precondition');
       configure({ enabled: true, thresholdRatio: reached ? 0.01 : 1, minSoundedMs: reached ? 6000 : 3600000 });
       assertSamePlayer();
       ab('wait', playButton);
@@ -290,23 +339,27 @@ try {
       assert(Number.isFinite(startPosition), 'live progress control readable');
       evaluate('window.__msE2EProgress = null');
       const startedAt = Date.now();
+      assertRequestedSong('before live playback');
       ab('click', playButton);
       ab('wait', '--fn', progressingRequestedSong);
+      assertRequestedSong('after extension mutation window');
       let savedBeforeUndo;
       if (undo) {
         ab('wait', '--fn', "(() => { const button=document.querySelector('[data-testid=\"music-saver-undo\"]'); return !!button?.getClientRects().length && getComputedStyle(button).visibility !== 'hidden'; })()");
         savedBeforeUndo = evaluate(`document.querySelector(${JSON.stringify(likeButton)})?.getAttribute('aria-checked')==='true'`);
         screenshot('undo-toast');
+        assertRequestedSong('before test Undo');
         ab('click', '[data-testid="music-saver-undo"]');
         wait(1500);
+        assertRequestedSong('after test Undo');
         assert.equal(savedBeforeUndo, true, `${name}: live save before Undo`);
       } else {
         wait(reached ? 15000 : 4000);
       }
       const endPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
       assert(endPosition >= startPosition + (reached ? 6000 : 1000), `live song really progressed: ${startPosition} -> ${endPosition}`);
-      const afterUndo = undo ? await liked(null) : undefined;
-      const after = undo ? afterUndo : await liked(null);
+      const afterUndo = undo ? await guardedLiked(null) : undefined;
+      const after = undo ? afterUndo : await guardedLiked(null);
       if (undo) assert.equal(afterUndo, false, 'live Undo removes the saved song');
       screenshot(name);
       pausePlayer();
@@ -324,6 +377,7 @@ try {
         expected,
         progressMs: endPosition-startPosition,
         documentPreserved: true,
+        target: requestedSong,
         ...(undo ? { savedBeforeUndo } : {}),
       });
       console.log(`PASS live ${name}`);
