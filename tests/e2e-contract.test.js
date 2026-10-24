@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { readPlayback } from "../extension/lib/player-dom.js";
-import { matrix, scenarios, liveScenarios, assertLiveTrack } from './e2e/scenarios.mjs';
+import { matrix, scenarios, liveScenarios, liveScenariosFor, assertLiveTrack } from './e2e/scenarios.mjs';
 import { WatchLoop, shouldBoot } from '../extension/content.js';
 import { SoundedTimeSampler } from '../extension/lib/player-dom.js';
 
@@ -58,6 +58,17 @@ test('live matrix covers the four session states and one direct Undo case', () =
     { id: 'liked-reached', startLiked: true, reached: true, undo: false },
     { id: 'undo', startLiked: false, reached: true, undo: true },
   ]);
+});
+
+test('decision clip mode records only the save and skip decisions', () => {
+  assert.deepEqual(liveScenariosFor(true).map(({ id }) => id), ['unliked-reached', 'liked-reached']);
+  assert.equal(liveScenariosFor(false), liveScenarios);
+});
+
+test('decision clips require manual workflow dispatch', () => {
+  assert.match(liveWorkflow, /^      decision_clips:$/m);
+  assert.match(liveWorkflow, /^          SPOTIFY_E2E_DECISION_CLIPS:/m);
+  assert.match(readFileSync(new URL('../scripts/spotify-e2e.mjs', import.meta.url), 'utf8'), /decision-\$\{/);
 });
 
 test('live songs require explicit Spotify track identities', () => {
