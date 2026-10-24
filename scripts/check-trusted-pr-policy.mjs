@@ -38,27 +38,71 @@ export async function inspect({ api, repo, number, policy }) {
   return { head: pull.head.sha, errors: evaluate({ pull, files, commits, checks, runs }, policy) };
 }
 
+function parseBody(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function errorMessage(response, text) {
+  const body = parseBody(text);
+  if (typeof body?.message === 'string' && body.message) return body.message;
+  return text.trim() || response.statusText || 'no response body';
+}
+
+const RATE_LIMIT_BACKOFF_MS = 30000;
+
+function rateLimitReset(response, message, now) {
+  const retryAfter = Number(response.headers.get('retry-after'));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return now + retryAfter * 1000;
+  if (!/rate limit/i.test(message) && response.headers.get('x-ratelimit-remaining') !== '0') return 0;
+  const reset = Number(response.headers.get('x-ratelimit-reset')) * 1000;
+  return Number.isFinite(reset) && reset > now ? reset : now + RATE_LIMIT_BACKOFF_MS;
+}
+
+export function createApi({ token, deadline, wait = delay, now = Date.now }) {
+  return async function api(path, options = {}) {
+    const method = options.method ?? 'GET';
+    for (;;) {
+      const at = now();
+      let response;
+      try {
+        response = await globalThis.fetch(`https://api.github.com${path}`, {
+          ...options,
+          headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' },
+        });
+      } catch (error) {
+        throw Object.assign(new Error(`${method} ${path} failed: ${error.message}`), { method, path });
+      }
+      if (response.ok) return response.json();
+      const message = errorMessage(response, await response.text());
+      const resetAt = rateLimitReset(response, message, at);
+      if (resetAt && resetAt <= deadline) {
+        await wait(resetAt - at);
+        continue;
+      }
+      const detail = resetAt ? `${message} (the rate limit resets at ${new Date(resetAt).toISOString()})` : message;
+      throw Object.assign(new Error(`${method} ${path} failed with ${response.status}: ${detail}`), {
+        status: response.status, method, path, githubMessage: message, rateResetAt: resetAt || null,
+        rateLimited: resetAt > 0,
+      });
+    }
+  };
+}
+
 async function main() {
   const repo = process.env.GITHUB_REPOSITORY;
   const number = Number(process.env.PR_NUMBER);
   if (repo !== 'komaksym/music-saver' || !Number.isSafeInteger(number) || number < 1) throw new Error('Expected music-saver and a positive PR number');
   const token = process.env.GH_TOKEN;
   if (!token) throw new Error('GH_TOKEN is required');
-  const api = async (path, options = {}) => {
-    const response = await globalThis.fetch(`https://api.github.com${path}`, {
-      ...options,
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' },
-    });
-    if (!response.ok) {
-      const error = new Error(`GitHub API returned ${response.status}`);
-      error.status = response.status;
-      throw error;
-    }
-    return response.json();
-  };
   const policy = JSON.parse(await readFile(new URL('./trusted-pr-policy.json', import.meta.url), 'utf8'));
   const publish = process.argv.includes('--publish');
+  const deadline = Date.now() + (publish ? 720000 : 0);
+  const api = createApi({ token, deadline });
   let head;
   const status = (state, description) => api(`/repos/${repo}/statuses/${head}`, {
     method: 'POST', body: JSON.stringify({ state, context: 'trusted-pr-policy', description,
@@ -69,7 +113,6 @@ async function main() {
       head = (await api(`/repos/${repo}/pulls/${number}`)).head.sha;
       await status('pending', 'Evaluate metadata and workflow provenance');
     }
-    const deadline = Date.now() + (publish ? 720000 : 0);
     let result;
     do {
       result = await inspect({ api, repo, number, policy });
@@ -82,7 +125,16 @@ async function main() {
     if (publish) await status(result.errors.length ? 'failure' : 'success', result.errors.length ? 'Policy rejected; inspect the workflow log' : 'Metadata and approved workflow provenance pass');
     if (result.errors.length) process.exitCode = 1;
   } catch (error) {
-    if (publish && head) await status('failure', 'Policy evaluation failed; rerun after resolving the error');
+    if (publish && head) {
+      const description = error.rateLimited
+        ? `GitHub API rate limit; the reset is ${new Date(error.rateResetAt).toISOString()}`
+        : 'Policy evaluation failed; rerun after resolving the error';
+      try {
+        await status('failure', description);
+      } catch (postError) {
+        console.error(`Could not post the failure status: ${postError.message}`);
+      }
+    }
     throw error;
   }
 }

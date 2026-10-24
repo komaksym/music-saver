@@ -70,6 +70,16 @@ The policy workflow and its scripts are not pinned. A file cannot verify the cop
 Manual dispatch runs the workflow file from the selected ref, so a writer can run a modified copy and post this status.
 Treat the verdict as a signal, not as proof against a hostile writer.
 
+## Rate limits
+
+A run can fail at its first request with `API rate limit exceeded for installation`.
+The failing runs reported `x-ratelimit-limit: 5000` and `x-ratelimit-remaining: 0`,
+and a `push`-triggered run failed the same way, so the trigger is not the cause.
+On the publish path the verifier waits for the reset while its 12-minute budget allows,
+then fails and names the reset time.
+Every failed API request names the method, the path, and GitHub's message.
+When the token cannot read the pull request, there is no head SHA to post a status to, so the log carries the reason.
+
 ## Limits
 
 A required status check binds a context to an App, not to a workflow implementation.
