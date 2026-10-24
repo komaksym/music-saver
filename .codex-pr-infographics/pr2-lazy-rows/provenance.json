@@ -1,0 +1,9 @@
+{
+  "skill": "baoyu-infographic",
+  "backend": "image_gen",
+  "image_sha256": "1388f1c0106e56e776155a69f880cd2564edaebb838aae17548077d6b9a9ab6f",
+  "prompt_sha256": "e8a3fd055ac60dd435ba088103fdbc142e74633a99ea2498dd86b689afde7ba9",
+  "purpose": "Shows the before-and-after of the lazy playlist row timing fix for PR 2.",
+  "visual_note": "BEFORE panel shows a frustrated listener beside loading playlist rows marked 0:05 and 0:04 with error ticks; AFTER panel shows a smiling headphone listener beside loaded rows 3:15, 2:48 and 4:01 with playback controls below.",
+  "created_at": "2026-10-21T09:30:45Z"
+}
