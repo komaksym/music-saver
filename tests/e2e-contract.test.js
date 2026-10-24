@@ -28,6 +28,11 @@ test('the live workflow records the authenticated browser session', () => {
   assert.match(readFileSync(new URL('../scripts/spotify-e2e.mjs', import.meta.url), 'utf8'), /ab\('record', 'start'/);
 });
 
+test('the live workflow explicitly opts into Liked-state mutations', () => {
+  assert.match(liveWorkflow, /^          SPOTIFY_E2E_MUTATE_LIKED: '1'$/m);
+  assert.match(readFileSync(new URL('../scripts/spotify-e2e.mjs', import.meta.url), 'utf8'), /SPOTIFY_E2E_MUTATE_LIKED/);
+});
+
 test('the watch loop boots on Spotify and on the loopback fixture host', () => {
   for (const href of ['https://open.spotify.com/track/abc', 'https://open.spotify.com/', 'http://127.0.0.1:41729/?id=song&liked=false']) {
     assert.equal(shouldBoot(href), true, href);
