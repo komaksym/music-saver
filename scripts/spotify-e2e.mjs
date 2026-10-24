@@ -220,6 +220,11 @@ try {
     try {
       diagnostics = evaluate(`({
         playButton: !!document.querySelector('[data-testid="play-button"]'),
+        playButtons: [...document.querySelectorAll('[data-testid="play-button"]')].map(button => ({
+          visible: !!button.getClientRects().length && getComputedStyle(button).visibility !== 'hidden',
+          disabled: button.disabled,
+          inActionBar: !!button.closest('[data-testid="action-bar-row"]')
+        })),
         playing: document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label') === 'Pause',
         expectedTrack: !!document.querySelector('[data-testid="now-playing-widget"] a[href*="' + ${JSON.stringify(process.env.SPOTIFY_E2E_TRACK_ID)} + '"]'),
         progress: Number(document.querySelector('[data-testid="playback-progressbar"] input')?.value),
