@@ -413,6 +413,10 @@ try {
           dataUri: a.getAttribute('data-uri'), dataContextUri: a.getAttribute('data-context-uri'),
           contextType: a.getAttribute('data-context-item-type'), text: a.textContent.trim()
         })),
+        playerIdentityElements: [...document.querySelectorAll('[data-testid="now-playing-widget"] *')].map(el => ({
+          tag: el.tagName, testId: el.getAttribute('data-testid'),
+          attrs: [...el.attributes].filter(a => /track|uri|context|item|href|id/i.test(a.name) || a.value.includes('spotify:track:') || a.value.includes('/track/')).map(a => [a.name, a.value])
+        })).filter(el => el.attrs.length),
         undoObservation: window.__msE2EUndo || null,
         progress: Number(document.querySelector('[data-testid="playback-progressbar"] input')?.value),
         duration: Number(document.querySelector('[data-testid="playback-progressbar"] input')?.max),
