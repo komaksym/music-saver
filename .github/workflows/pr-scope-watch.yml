@@ -25,16 +25,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BEFORE: ${{ github.event.before }}
-          AFTER: ${{ github.sha }}
+          AFTER: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            echo "scope-watch: no prior commit on this branch; nothing to compare"
+          set -o pipefail
+          if [ -z "$AFTER" ]; then
+            echo "scope-watch: this event carries no pull request head; nothing to compare"
             exit 0
           fi
-          N=$(git diff --name-only "$BEFORE" "$AFTER" | wc -l | tr -d ' ')
-          NEWDIRS=$(git diff --name-only --diff-filter=A "$BEFORE" "$AFTER" | cut -d/ -f1 | sort -u | tr '\n' ' ')
-          echo "scope-watch: $N files changed in this push; new roots: $NEWDIRS"
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            FROM="$BEFORE"
+          else
+            git fetch --quiet origin "$BASE_REF"
+            FROM=$(git merge-base "origin/$BASE_REF" "$AFTER")
+            echo "scope-watch: previous head is not in this clone, which a force-push explains; measuring the branch against $BASE_REF instead"
+          fi
+          N=$(git diff --name-only "$FROM" "$AFTER" | wc -l | tr -d ' ')
+          NEWDIRS=$(git diff --name-only --diff-filter=A "$FROM" "$AFTER" | cut -d/ -f1 | sort -u | tr '\n' ' ')
+          echo "scope-watch: $N files changed since $FROM; new roots: $NEWDIRS"
           if [ "$N" -ge 5 ]; then
             gh pr comment "$PR_NUMBER" --body "Scope check: this push touches $N files, which reads as a direction change rather than a small fix. Regenerate the PR infographic with the baoyu-infographic skill and post it as a comment below. Do not replace the infographic in the PR body."
           fi
