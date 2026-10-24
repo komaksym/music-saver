@@ -99,3 +99,49 @@ test('reports the failing request and the message GitHub sent', async t => {
     return true;
   });
 });
+
+function clock() {
+  const start = 1_700_000_000_000;
+  let current = start;
+  const waited = [];
+  return { start, waited, now: () => current, wait: async ms => { waited.push(ms); current += ms; } };
+}
+
+test('waits out an installation rate limit that resets inside the budget', async t => {
+  const c = clock();
+  const calls = stubFetch(t, [
+    reply(403, { message: 'API rate limit exceeded for installation.' },
+      { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String((c.start + 45000) / 1000) }),
+    reply(200, { number: 23 }),
+  ]);
+  const api = createApi({ token: 'token', deadline: c.start + 720000, wait: c.wait, now: c.now });
+  assert.deepEqual(await api('/repos/o/r/pulls/23'), { number: 23 });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(c.waited, [45000]);
+});
+
+test('fails with the rate limit reason when the reset is past the budget', async t => {
+  const c = clock();
+  const calls = stubFetch(t, [
+    reply(403, { message: 'API rate limit exceeded for installation.' },
+      { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String((c.start + 3600000) / 1000) }),
+  ]);
+  const api = createApi({ token: 'token', deadline: c.start + 720000, wait: c.wait, now: c.now });
+  await assert.rejects(api('/repos/o/r/pulls/23'), error => {
+    assert.equal(error.rateLimited, true);
+    assert.equal(error.rateResetAt, c.start + 3600000);
+    assert.match(error.message, /^GET \/repos\/o\/r\/pulls\/23 failed with 403: API rate limit exceeded for installation\. \(the rate limit resets at 2023-11-14T23:13:20\.000Z\)$/);
+    return true;
+  });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(c.waited, []);
+});
+
+test('names the request when the connection fails before GitHub answers', async t => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('getaddrinfo ENOTFOUND api.github.com'); };
+  t.after(() => { globalThis.fetch = original; });
+  const c = clock();
+  const api = createApi({ token: 'token', deadline: c.start + 60000, wait: c.wait, now: c.now });
+  await assert.rejects(api('/repos/o/r/pulls/23'), /^Error: GET \/repos\/o\/r\/pulls\/23 failed: getaddrinfo ENOTFOUND api\.github\.com$/);
+});
