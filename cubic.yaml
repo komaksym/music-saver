@@ -1,0 +1,4 @@
+version: 1
+reviews:
+  enabled: true
+  incremental_commits: false
