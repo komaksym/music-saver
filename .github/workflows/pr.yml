@@ -1,0 +1,59 @@
+name: pr
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    uses: komaksym/pr-gate/.github/workflows/checks.yml@PR_GATE_SHA # v1
+    permissions:
+      contents: read
+      pull-requests: read
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Verify extension
+        run: npm run verify
+      - name: Install browser harness
+        run: npx --no-install agent-browser install --with-deps
+      - name: Run extension matrix in virtual display
+        run: PATH="$PWD/node_modules/.bin:$PATH" xvfb-run --auto-servernum node scripts/spotify-e2e.mjs fixture
+      - name: Upload deterministic browser proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: spotify-e2e-fixture-${{ github.run_id }}-${{ github.run_attempt }}
+          path: e2e-artifacts/fixture/
+          if-no-files-found: error
+          retention-days: 7
+
+  gate:
+    if: always()
+    needs: [checks, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - run: echo gate passed
