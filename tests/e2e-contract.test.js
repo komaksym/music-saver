@@ -2,8 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readPlayback } from "../extension/lib/player-dom.js";
 import { matrix, scenarios, assertLiveTrack } from './e2e/scenarios.mjs';
-import { WatchLoop } from '../extension/content.js';
+import { WatchLoop, shouldBoot } from '../extension/content.js';
 import { SoundedTimeSampler } from '../extension/lib/player-dom.js';
+
+test('the watch loop boots on Spotify and on the loopback fixture host', () => {
+  for (const href of ['https://open.spotify.com/track/abc', 'https://open.spotify.com/', 'http://127.0.0.1:41729/?id=song&liked=false']) {
+    assert.equal(shouldBoot(href), true, href);
+  }
+  for (const href of ['', undefined, 'https://example.com/', 'https://open.spotify.com.evil.test/', 'http://127.0.0.1.evil.test/']) {
+    assert.equal(shouldBoot(href), false, String(href));
+  }
+});
 
 test('browser matrix covers every liked, ratio, and floor combination', () => {
   assert.equal(matrix.length, 8);

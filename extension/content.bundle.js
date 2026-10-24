@@ -855,12 +855,25 @@ class WatchLoop {
   }
 }
 
+// The shipped manifest matches only Spotify, so the loop boots there. The E2E
+// runner patches a temp manifest to add loopback and serves the player fixture
+// from it, so that host must boot too.
+function shouldBoot(href) {
+  let url;
+  try {
+    url = new URL(String(href || ""));
+  } catch (e) {
+    return false;
+  }
+  if (url.hostname === "open.spotify.com") return true;
+  return url.protocol === "http:" && url.hostname === "127.0.0.1";
+}
+
 function liveBoot() {
   try {
     if (typeof document === "undefined") return;
     if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.sendMessage) return;
-    const href = String((typeof location !== "undefined" && location.href) || "");
-    if (!href.includes("open.spotify.com")) return;
+    if (!shouldBoot((typeof location !== "undefined" && location.href) || "")) return;
     const sendMessage = (msg) =>
       new Promise((resolve) => {
         try {
