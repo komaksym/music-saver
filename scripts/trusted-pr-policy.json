@@ -29,11 +29,9 @@
     { "context": "ready", "app": 15368, "path": ".github/workflows/pr-ready.yml" },
     { "context": "pr-hygiene", "app": 15368, "path": ".github/workflows/pr-hygiene.yml" },
     { "context": "commit-lint", "app": 15368, "path": ".github/workflows/commit-lint.yml" },
-    { "context": "cubic-gate", "app": 15368, "path": ".github/workflows/cubic-gate.yml" },
     { "context": "actionlint", "app": 15368, "path": ".github/workflows/security.yml" },
     { "context": "trufflehog", "app": 15368, "path": ".github/workflows/security.yml" },
     { "context": "zizmor", "app": 15368, "path": ".github/workflows/security.yml" },
-    { "context": "smoke", "app": 15368, "path": ".github/workflows/e2e-smoke.yml" },
-    { "context": "cubic · AI code reviewer", "app": 1082092 }
+    { "context": "smoke", "app": 15368, "path": ".github/workflows/e2e-smoke.yml" }
   ]
 }

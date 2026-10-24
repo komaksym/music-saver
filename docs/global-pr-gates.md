@@ -50,13 +50,15 @@ The verifier checks these rules:
 - Lists are paginated. Unreadable responses, incomplete commit lists, and metadata changes during evaluation fail closed.
 
 The body headings are `Summary`, `Validation`, `Risks / Notes`, `Breaking changes`, and `Visual summary`.
-The eleven supporting contexts are `ci`, `pr-title`, `ready`, `pr-hygiene`, `commit-lint`,
-`cubic-gate`, `actionlint`, `trufflehog`, `zizmor`, `smoke`, and `cubic · AI code reviewer`.
+The nine supporting contexts are `ci`, `pr-title`, `ready`, `pr-hygiene`, `commit-lint`,
+`actionlint`, `trufflehog`, `zizmor`, and `smoke`.
+Cubic is not required. The Cubic trial quota ran out, so the owner removed `cubic-gate` and
+`cubic · AI code reviewer` from ruleset `25511836` and from the policy. Both still run and report, but they block nothing.
 
 ## Re-evaluation
 
-The policy requires `cubic-gate` and the `cubic · AI code reviewer` check, and either one can report after the policy does.
-The policy therefore re-runs when `cubic-gate` or `pr-ready` completes, so an early failure clears without a PR edit.
+The `ready` rollup can report after the policy does.
+The policy therefore re-runs when `pr-ready` or `cubic-gate` completes, so an early failure clears without a PR edit.
 GitHub starts a `workflow_run` workflow only when its file exists on the default branch, so this re-run starts after the merge
 ([workflow_run](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)).
 
@@ -118,7 +120,7 @@ A dedicated App can provide an independent verdict identity, but creating one is
    Include a documentation-only PR, which must still receive `smoke` on its head.
 5. Confirm workflow source selection from actual run evidence, not only event documentation.
 6. Test wrong workflow names, newer push runs, pending PR reruns, weak scripts, and stale verdict rejection.
-7. Force a failed verdict, then let `cubic-gate` complete, and confirm the completion re-run replaces it.
+7. Force a failed verdict, then let `pr-ready` complete, and confirm the completion re-run replaces it.
 8. Preserve a fresh ruleset snapshot and verify API readback after any authorized remote change.
 
 Current GitHub documentation describes `pull_request_target` as default-branch context.

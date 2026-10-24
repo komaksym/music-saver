@@ -50,3 +50,8 @@ test('the ready rollup requires policy contexts with the same workflow paths', (
     assert.equal(approved.path, entry.path, `${entry.context} workflow path drifted from the approved policy`);
   }
 });
+
+test('the policy does not wait on Cubic, which main no longer requires', () => {
+  const cubic = policy.checks.filter(check => /cubic/i.test(check.context)).map(check => check.context);
+  assert.deepEqual(cubic, [], 'no Cubic context in policy.checks');
+});

@@ -24,7 +24,8 @@ Port PR8's five-section pull request template, so a PR opened from the template 
    Require a dedicated App verdict or organization-required workflows before claiming tamper-proof global enforcement.
    Port PR8's secretless PR smoke job and the scripts it runs. Require `smoke` in the manifest and the ready rollup.
    Read pull-request runs only, so a newer push run cannot satisfy or reject the rollup.
-   Re-run the verdict when `cubic-gate` or `pr-ready` completes, so an early failure clears without a PR edit.
+   Re-run the verdict when `pr-ready` or `cubic-gate` completes, so an early failure clears without a PR edit.
+   Cubic is not required: its trial quota ran out, so the owner removed both Cubic contexts from the ruleset and the policy.
 3. Verify locally and open a deployment PR against `main`. Preserve the remote ruleset snapshot.
 4. After merge, edit ruleset 25511836 to add `smoke` and `trusted-pr-policy`, confirm it targets the default branch only, and read back the API state.
 
