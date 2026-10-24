@@ -1,0 +1,9 @@
+# Cubic review behavior only. The merge gate threshold lives in
+# .github/workflows/cubic-gate.yml (BLOCK_PRIORITIES) — never here.
+version: 1
+reviews:
+  enabled: true
+  sensitivity: medium
+  incremental_commits: true
+  resolve_threads_when_addressed: true
+auto_approve_behavior: disabled
