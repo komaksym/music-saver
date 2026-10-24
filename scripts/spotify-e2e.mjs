@@ -77,6 +77,7 @@ try {
     await new Promise((done, reject) => { server.once('error', reject); setTimeout(done, 300); });
     for (const scenario of scenarios) {
       configure(scenario.settings);
+      const startedAt = Date.now();
       const trackId = scenario.id.replace(/-/g, '');
       open(`http://127.0.0.1:${address.port}/?id=${trackId}&liked=${scenario.liked}&fail=${scenario.mode === 'failure'}`);
       ab('wait', '#play');
@@ -101,7 +102,10 @@ try {
       const state = evaluate('fixture.state()');
       screenshot(scenario.id);
       const observed = events();
-      const kinds = observed.recent.map(event => event.kind);
+      // A clear is not synchronous in the background's cached copy, and an event
+      // created just before the previous navigation can land after it. Judge only
+      // the events stamped inside this scenario.
+      const kinds = observed.recent.filter(event => event.ts >= startedAt).map(event => event.kind);
       const expectedKinds = scenario.mode === 'undo' ? ['save', 'undo'] : scenario.expected ? [scenario.expected] : [];
       assert.deepEqual(kinds, expectedKinds, `${scenario.id}: activity log`);
       assert.equal(state.liked, scenario.mode === 'undo' || scenario.mode === 'failure' ? false : scenario.expected === 'save' || scenario.liked, `${scenario.id}: liked state`);

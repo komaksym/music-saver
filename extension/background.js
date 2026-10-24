@@ -108,10 +108,13 @@ export async function boot(env) {
     const onChanged = env.chrome.storage && env.chrome.storage.onChanged;
     if (onChanged && onChanged.addListener) {
       onChanged.addListener((changes) => {
-        if (changes && changes.settings) {
+        if (!changes) return;
+        if (changes.settings) {
           state.settings = normalizeSettings(changes.settings.newValue);
           state.tracker = new EligibilityTracker(state.settings);
         }
+        if (changes["activity-log"]) state.log.adopt(changes["activity-log"].newValue);
+        if (changes["retry-queue"]) state.queue.adopt(changes["retry-queue"].newValue);
       });
     }
   } catch (e) {

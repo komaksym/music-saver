@@ -5,10 +5,16 @@ import { boot } from "../extension/background.js";
 function stubChrome() {
   const data = {};
   let listener;
+  let onChanged;
   return {
-    storage: { local: { get: async (k) => ({ [k]: data[k] }), set: async (o) => Object.assign(data, o) } },
+    storage: {
+      local: { get: async (k) => ({ [k]: data[k] }), set: async (o) => Object.assign(data, o) },
+      onChanged: { addListener: (fn) => { onChanged = fn; } },
+    },
     runtime: { onMessage: { addListener: (fn) => { listener = fn; } } },
     send: (msg) => new Promise((resolve) => listener(msg, {}, resolve)),
+    // Another context (the options page or the browser harness) writes storage.
+    externalWrite: (changes) => { Object.assign(data, { ...changes }); onChanged(changes); },
   };
 }
 
@@ -52,6 +58,25 @@ test("redelivered events dedupe by nonce", async () => {
   assert.deepEqual(await chrome.send({ type: "ms-event", event }), { ok: true, duplicate: true });
   const read = await chrome.send({ type: "ms-read", limit: 10, nowMs: 2000 });
   assert.equal(read.recent.length, 1);
+});
+
+test("an external clear is adopted, so a later event cannot republish cleared entries", async () => {
+  const chrome = stubChrome();
+  await boot({ chrome });
+  await chrome.send({ type: "ms-event", event: saveEvent("n1", "track-a") });
+  chrome.externalWrite({ "activity-log": { oldValue: [{ ts: 1000, kind: "save", trackId: "track-a", detail: "" }], newValue: [] } });
+  await chrome.send({ type: "ms-event", event: saveEvent("n2", "track-b") });
+  const read = await chrome.send({ type: "ms-read", limit: 10, nowMs: 2000 });
+  assert.deepEqual(read.recent.map((e) => e.trackId), ["track-b"]);
+});
+
+test("an external queue clear is adopted, so a stale retry cannot reappear", async () => {
+  const chrome = stubChrome();
+  await boot({ chrome });
+  await chrome.send({ type: "ms-event", event: { ...saveEvent("n-fail", "track-b"), kind: "fail", detail: "save:dom-changed" } });
+  chrome.externalWrite({ "retry-queue": { oldValue: [], newValue: [] } });
+  await chrome.send({ type: "ms-event", event: saveEvent("n-ok", "track-c") });
+  assert.deepEqual((await chrome.send({ type: "ms-read", limit: 10, nowMs: 2000 })).pending, []);
 });
 
 test("fail events enqueue intents with backoff and manual retry", async () => {
