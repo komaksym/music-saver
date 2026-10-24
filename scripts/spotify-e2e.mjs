@@ -38,9 +38,9 @@ let phase = 'browser launch';
 let requestedSong;
 const nowPlayingTrackId = `(() => {
   const widget=document.querySelector('[data-testid="now-playing-widget"]');
-  const findAnchor=root=>root?.querySelector('a[data-testid="context-link"][data-context-item-type="track"], a[href*="spotify:track:"], a[href*="spotify%3Atrack%3A"], a[href*="/track/"]');
-  const anchor=findAnchor(widget)||findAnchor(document);
-  const candidates=anchor ? [anchor.getAttribute('href'),anchor.getAttribute('data-uri'),anchor.getAttribute('data-context-uri')].filter(Boolean) : [];
+  const link=widget?.querySelector('[data-testid="context-item-link"]');
+  const anchor=widget?.querySelector('a[data-testid="context-link"][data-context-item-type="track"]');
+  const candidates=[link?.getAttribute('href'),anchor?.getAttribute('href'),anchor?.getAttribute('data-uri'),anchor?.getAttribute('data-context-uri')].filter(Boolean);
   const pattern=new RegExp('(?:spotify:track:|spotify%3atrack%3a|/track/)([A-Za-z0-9]{22})(?:[/?#]|$)','i');
   const ids=new Set(candidates.map(value=>value.match(pattern)?.[1]).filter(Boolean));
   return ids.size===1 ? [...ids][0] : null;
@@ -207,9 +207,9 @@ try {
     function readNowPlayingIdentity() {
       return evaluate(`(() => {
         const widget=document.querySelector('[data-testid="now-playing-widget"]');
-        const findAnchor=root=>root?.querySelector('a[data-testid="context-link"][data-context-item-type="track"], a[href*="spotify:track:"], a[href*="spotify%3Atrack%3A"], a[href*="/track/"]');
-        const anchor=findAnchor(widget)||findAnchor(document);
-        const candidates=anchor ? [anchor.getAttribute('href'),anchor.getAttribute('data-uri'),anchor.getAttribute('data-context-uri')].filter(Boolean) : [];
+        const link=widget?.querySelector('[data-testid="context-item-link"]');
+        const anchor=widget?.querySelector('a[data-testid="context-link"][data-context-item-type="track"]');
+        const candidates=[link?.getAttribute('href'),anchor?.getAttribute('href'),anchor?.getAttribute('data-uri'),anchor?.getAttribute('data-context-uri')].filter(Boolean);
         const pattern=new RegExp('(?:spotify:track:|spotify%3atrack%3a|/track/)([A-Za-z0-9]{22})(?:[/?#]|$)','i');
         const ids=new Set(candidates.map(value=>value.match(pattern)?.[1]).filter(Boolean));
         return {
