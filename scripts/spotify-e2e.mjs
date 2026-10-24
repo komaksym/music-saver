@@ -196,6 +196,7 @@ try {
     };
     for (const startLiked of [false, true]) {
       for (const reached of [false, true]) {
+        phase = `${startLiked ? 'liked' : 'unliked'}-${reached ? 'reached' : 'below'}`;
         configure({ enabled: false, thresholdRatio: 0.01, minSoundedMs: 60000 });
         open(url); ab('wait', likeButton);
         await liked(startLiked);
@@ -204,13 +205,17 @@ try {
         configure({ enabled: true, thresholdRatio: reached ? 0.01 : 1, minSoundedMs: reached ? 6000 : 3600000 });
         open(url); ab('wait', playButton);
         const paused = evaluate("document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')!=='Pause'");
-        if(paused) ab('click', playButton);
+        if (!paused) {
+          ab('click', '[data-testid="control-button-playpause"]');
+          ab('wait', '--fn', "document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')==='Play'");
+        }
+        ab('click', playButton);
         ab('wait', '--fn', playingRequestedSong);
         const startPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
         assert(Number.isFinite(startPosition), 'live progress control readable');
         wait(reached ? 15000 : 4000);
         const endPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
-        assert(endPosition > startPosition + (reached ? 6000 : 1000), 'live song really progressed');
+        assert(endPosition > startPosition + (reached ? 6000 : 1000), `live song really progressed: ${startPosition} -> ${endPosition}`);
         const after = await liked(null);
         const name = `${startLiked ? 'liked' : 'unliked'}-${reached ? 'reached' : 'below'}`;
         screenshot(name);
