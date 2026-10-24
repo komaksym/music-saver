@@ -234,7 +234,13 @@ try {
       assert.equal(evaluate('location.pathname'), `/track/${track}`, 'exact dedicated track page is active');
       evaluate('window.__msE2EProgress = null');
       ab('click', playButton);
-      ab('wait', '--fn', progressingRequestedSong);
+      try { ab('wait', '--fn', progressingRequestedSong); }
+      catch (error) {
+        if (evaluate("document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')") !== 'Play') throw error;
+        evaluate('window.__msE2EProgress = null');
+        ab('click', playButton);
+        ab('wait', '--fn', progressingRequestedSong);
+      }
       pausePlayer();
       return assertRequestedSong('requested song selected');
     }
