@@ -149,8 +149,8 @@ export class WatchLoop {
     return this.fail(track, now, "remove", (out && out.reason) || "remove-failed");
   }
 
-  emit(opts) {
-    const event = {
+  buildEvent(opts) {
+    return {
       nonce: makeNonce(opts.track.id, opts.kind, opts.now),
       ts: opts.now,
       kind: opts.kind,
@@ -160,6 +160,10 @@ export class WatchLoop {
       artist: opts.track.artist,
       detail: opts.detail || "",
     };
+  }
+
+  emit(opts) {
+    const event = this.buildEvent(opts);
     try {
       this.report(event);
     } catch (e) {
@@ -188,14 +192,32 @@ export class WatchLoop {
       } catch (e) {
         out = null;
       }
+      const changed = !!(out && out.ok);
+      if (changed) {
+        // Mirror the first-attempt outcome: a retried save that finds the track
+        // already saved is a skip, and every real save offers Undo.
+        const kind = intent.kind === "remove" ? "undo" : out.action === "already-saved" ? "skip" : "save";
+        let logged = false;
+        try {
+          const res = await this.send({ type: "ms-event", event: this.buildEvent({ kind, track, now: this.nowMs(), detail: "retry" }) });
+          logged = !!(res && res.ok);
+        } catch (e) {
+          logged = false;
+        }
+        if (!logged) {
+          // The library changed but the durable log did not, so keep the intent
+          // queued. The next poll sees the saved state and records it then.
+          try { await this.send({ type: "ms-ack", id: intent.id, ok: false, nowMs: this.nowMs() }); } catch (e) { /* stays queued */ }
+          continue;
+        }
+        if (kind === "save") {
+          try { this.toast.show(track, () => { this.undo(track); }); } catch (e) { /* a toast failure never blocks the saved state */ }
+        }
+      }
       try {
-        await this.send({ type: "ms-ack", id: intent.id, ok: !!(out && out.ok), nowMs: this.nowMs() });
+        await this.send({ type: "ms-ack", id: intent.id, ok: changed, nowMs: this.nowMs() });
       } catch (e) {
         // The intent stays queued; the next poll retries it.
-      }
-      if (out && out.ok) {
-        // The retry already changed the library, so the log must show it.
-        this.emit({ kind: intent.kind === "remove" ? "undo" : "save", track, now: this.nowMs(), detail: "retry" });
       }
     }
   }
@@ -221,9 +243,10 @@ export class WatchLoop {
 function liveBoot() {
   try {
     if (typeof document === "undefined") return;
+    // Origin policy lives in the manifest's content_scripts matches, the one
+    // place that decides where this script loads. A second URL check here would
+    // duplicate that policy and silently disable controlled origins.
     if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.sendMessage) return;
-    const href = String((typeof location !== "undefined" && location.href) || "");
-    if (!href.includes("open.spotify.com")) return;
     const sendMessage = (msg) =>
       new Promise((resolve) => {
         try {

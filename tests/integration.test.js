@@ -258,7 +258,7 @@ test("manual retry executes while the same track keeps playing", async () => {
   await boot({ chrome });
   const doc = fakeDoc();
   let saveCalls = 0;
-  const { loop, events } = wire(doc, chrome, {
+  const { loop, events, toast } = wire(doc, chrome, {
     likes: {
       check: async () => "unliked",
       save: async () => (++saveCalls === 1 ? { ok: false, reason: "dom-changed" } : { ok: true, action: "saved" }),
@@ -279,6 +279,7 @@ test("manual retry executes while the same track keeps playing", async () => {
   assert.deepEqual(events.map((e) => e.kind), ["fail", "save"]);
   assert.equal(events[1].detail, "retry");
   assert.equal(events[1].trackId, "abc123");
+  assert.equal(toast.shown, 1, "a retried real save offers Undo");
   assert.deepEqual((await chrome.send({ type: "ms-due", nowMs: 600000 })).due, []);
 });
 
@@ -308,6 +309,67 @@ test("a retried removal records undo, so the log matches the library", async () 
   assert.deepEqual(events.map((e) => e.kind), ["fail", "undo"]);
   assert.equal(events[1].detail, "retry");
   assert.deepEqual((await chrome.send({ type: "ms-due", nowMs: 600000 })).due, []);
+});
+
+test("a retried save that finds the track already saved records skip", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  let saveCalls = 0;
+  const { loop, events, toast } = wire(doc, chrome, {
+    likes: {
+      check: async () => "unliked",
+      save: async () => (++saveCalls === 1 ? { ok: false, reason: "confirm-mismatch" } : { ok: true, action: "already-saved" }),
+      remove: async () => ({ ok: true, action: "removed" }),
+    },
+  });
+  await listenThrough(loop, doc, 190000);
+  assert.deepEqual(events.map((e) => e.kind), ["fail"]);
+  clock.now = 200000;
+  doc.state.positionMs = 200000;
+  await loop.tick();
+  await flush();
+  assert.deepEqual(events.map((e) => e.kind), ["fail", "skip"]);
+  assert.equal(events[1].detail, "retry");
+  assert.equal(toast.shown, 0, "a skip never offers Undo");
+  assert.deepEqual((await chrome.send({ type: "ms-due", nowMs: 600000 })).due, []);
+});
+
+test("a retry whose log write fails stays queued until the event is durable", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  let saveCalls = 0;
+  const { loop, events } = wire(doc, chrome, {
+    likes: {
+      check: async () => "unliked",
+      save: async () => (++saveCalls === 1 ? { ok: false, reason: "dom-changed" } : { ok: true, action: "saved" }),
+      remove: async () => ({ ok: true, action: "removed" }),
+    },
+  });
+  await listenThrough(loop, doc, 190000);
+  const send = loop.send;
+  loop.send = async (msg) => {
+    if (msg.type === "ms-event") throw new Error("log unavailable");
+    return send(msg);
+  };
+  clock.now = 200000;
+  doc.state.positionMs = 200000;
+  await loop.tick();
+  await flush();
+  assert.equal(saveCalls, 2, "the library change happened");
+  assert.deepEqual(events.map((e) => e.kind), ["fail"], "but nothing was logged");
+  const queued = await chrome.send({ type: "ms-due", nowMs: 600000 });
+  assert.deepEqual(queued.due.map((i) => i.id), ["abc123"], "the intent is still queued");
+  loop.send = send;
+  clock.now = 260000;
+  doc.state.positionMs = 260000;
+  await loop.tick();
+  await flush();
+  assert.deepEqual(events.map((e) => e.kind), ["fail", "save"], "the retry logs once durable");
+  assert.deepEqual((await chrome.send({ type: "ms-due", nowMs: 700000 })).due, []);
 });
 
 test("a retry that fails again logs no extra event and stays queued", async () => {

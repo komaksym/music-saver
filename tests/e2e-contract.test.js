@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { readPlayback } from "../extension/lib/player-dom.js";
 import { matrix, scenarios, finalLiked, validateScenarios, assertLiveTrack } from './e2e/scenarios.mjs';
 import { WatchLoop } from '../extension/content.js';
@@ -48,16 +49,26 @@ test('retry recovery asserts the queued failure is resolved by a later save', ()
   assert.deepEqual(scenario.expected, ['fail', 'save']);
   assert.equal(scenario.fail, 'once');
   assert.equal(scenario.expect.saves, 1);
-  assert.equal(scenario.expect.opens, undefined, 'a retry poll can race the read, so opens is not asserted');
+  assert.equal(scenario.expect.opens, 2, 'one failed click plus one retried save click');
   assert.equal(finalLiked(scenario.liked, scenario.expected), true);
   assert.equal(scenario.retry, undefined);
 });
 
-test('track change asserts a per-track budget and a second decision', () => {
+test('track change saves both tracks, proving per-track identity and liked state', () => {
   const scenario = scenarios.find(s => s.id === 'track-change');
-  assert.deepEqual(scenario.expected, ['save', 'skip']);
+  assert.deepEqual(scenario.expected, ['save', 'save']);
   assert.deepEqual(scenario.tracks, ['trackchange', 'trackb']);
   assert.equal(new Set(scenario.tracks).size, 2);
+  assert.equal(scenario.expect.saves, 2);
+});
+
+test('the manifest is the only origin policy for the content script', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../extension/manifest.json', import.meta.url)));
+  assert.deepEqual(manifest.host_permissions, ['https://open.spotify.com/*']);
+  assert.deepEqual(manifest.content_scripts, [{ matches: ['https://open.spotify.com/*'], js: ['content.bundle.js'] }]);
+  const bundle = readFileSync(new URL('../extension/content.bundle.js', import.meta.url), 'utf8');
+  const code = bundle.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
+  assert.equal(/open\.spotify\.com/.test(code), false, 'the built bundle must not carry a second origin check');
 });
 
 test('live songs require explicit Spotify track identities', () => {
