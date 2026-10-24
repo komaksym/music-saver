@@ -76,6 +76,8 @@ let server;
 let restore;
 let initialLiked;
 let cleanupError;
+const recording = mode === 'live' && process.env.SPOTIFY_E2E_RECORD === '1' ? resolve(artifacts, 'agent-session.webm') : null;
+let recordingStarted = false;
 try {
   ab('open', 'about:blank');
   ab('tab', 'new', '--label', 'player', 'about:blank');
@@ -170,6 +172,11 @@ try {
       artist: [...document.querySelectorAll('main a[href*="/artist/"]')].map(link => link.textContent.trim()).find(Boolean)
     })`);
     assert(requestedSong.title && requestedSong.artist, 'requested track page identifies its title and artist');
+    if (recording) {
+      phase = 'video recording';
+      ab('record', 'start', recording, '--fps', '10', '--cursor');
+      recordingStarted = true;
+    }
     const playingRequestedSong = `document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]')?.textContent.trim() === ${JSON.stringify(requestedSong.title)} && document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"]')?.textContent.trim() === ${JSON.stringify(requestedSong.artist)} && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label') === 'Pause'`;
     const progressingRequestedSong = `(() => {
       const position = Number(document.querySelector('[data-testid="playback-progressbar"] input')?.value);
@@ -362,9 +369,10 @@ try {
   console.error(error.message);
 } finally {
   try { if (restore) await restore(); } catch(error) { cleanupError = error.message; process.exitCode = 1; }
+  try { if (recordingStarted) ab('record', 'stop'); } catch { cleanupError ||= 'video recording stop failed'; process.exitCode = 1; }
   try { ab('close'); } catch { cleanupError ||= 'browser close failed'; process.exitCode = 1; }
   server?.kill?.();
   const bundleSha256 = createHash('sha256').update(readFileSync(resolve(root, 'extension/content.bundle.js'))).digest('hex');
-  writeFileSync(resolve(artifacts, 'results.json'), JSON.stringify({ mode, bundleSha256, results, initialLiked, cleanupError, passed: process.exitCode !== 1, timestamp: new Date().toISOString() }, null, 2));
+  writeFileSync(resolve(artifacts, 'results.json'), JSON.stringify({ mode, bundleSha256, recording: recordingStarted ? recording : null, results, initialLiked, cleanupError, passed: process.exitCode !== 1, timestamp: new Date().toISOString() }, null, 2));
   rmSync(work, { recursive: true, force: true });
 }

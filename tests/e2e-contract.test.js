@@ -6,8 +6,8 @@ import { matrix, scenarios, liveScenarios, assertLiveTrack } from './e2e/scenari
 import { WatchLoop, shouldBoot } from '../extension/content.js';
 import { SoundedTimeSampler } from '../extension/lib/player-dom.js';
 
-const fixtureWorkflow = readFileSync(new URL('../.github/workflows/spotify-e2e.yml', import.meta.url), 'utf8');
-const liveWorkflow = readFileSync(new URL('../.github/workflows/spotify-e2e-live.yml', import.meta.url), 'utf8');
+const fixtureWorkflow = readFileSync(new URL('../.github/workflows/spotify-e2e-fixture.yml', import.meta.url), 'utf8');
+const liveWorkflow = readFileSync(new URL('../.github/workflows/spotify-e2e.yml', import.meta.url), 'utf8');
 
 test('pull request checks run only the fixture workflow', () => {
   assert.match(fixtureWorkflow, /^  pull_request:$/m);
@@ -21,6 +21,11 @@ test('browser workflows install the locked harness without a global package inst
     assert.match(workflow, /^        run: npx --no-install agent-browser install --with-deps$/m);
     assert.doesNotMatch(workflow, /npm install --global|npm install -g/);
   }
+});
+
+test('the live workflow records the authenticated browser session', () => {
+  assert.match(liveWorkflow, /^          SPOTIFY_E2E_RECORD: '1'$/m);
+  assert.match(readFileSync(new URL('../scripts/spotify-e2e.mjs', import.meta.url), 'utf8'), /ab\('record', 'start'/);
 });
 
 test('the watch loop boots on Spotify and on the loopback fixture host', () => {

@@ -86,8 +86,8 @@ Do not run the suite while another browser owns the same profile.
 
 ## GitHub checks
 
-`.github/workflows/spotify-e2e.yml` runs the fixture job on pull requests, `main`
-pushes, and manual dispatches. `.github/workflows/spotify-e2e-live.yml` runs the
+`.github/workflows/spotify-e2e-fixture.yml` runs the fixture job on pull requests, `main`
+pushes, and manual dispatches. `.github/workflows/spotify-e2e.yml` runs the
 live job only on the nightly schedule and on an explicit dispatch, so unreviewed
 code never uses the dedicated account. The live workflow uses repository-wide
 concurrency for that account and never cancels an active run to start another one.
@@ -98,9 +98,10 @@ a ruleset check could look green without running a live test. Review scheduled a
 manual live results instead. A passing fixture job is not evidence that live
 authentication or playback worked.
 
-Artifacts contain results and screenshots only. Live screenshots hide everything
+Artifacts contain results, screenshots, and a live browser video. Live screenshots hide everything
 except the song widget and extension toast. Cookie files, browser profiles, snapshots,
-network captures, and raw browser error output are not uploaded. The live job removes
+network captures, and raw browser error output are not uploaded. The live video records
+the dedicated account's test session, including the automated cursor. The live job removes
 its ephemeral profile and cookie file even after a failure.
 
 ## Run on Linux
