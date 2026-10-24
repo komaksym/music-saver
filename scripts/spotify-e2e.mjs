@@ -33,6 +33,7 @@ const id = createHash('sha256').update(key).digest('hex').slice(0, 32).replace(/
 const options = `chrome-extension://${id}/options.html`;
 const session = `ms-${mode}-${process.pid}`;
 const flags = ['--session', session, '--profile', resolve(profile), '--extension', extension, '--headed', '--json'];
+let phase = 'browser launch';
 function ab(...args) {
   try {
     const raw = execFileSync('agent-browser', [...flags, ...args], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -40,7 +41,7 @@ function ab(...args) {
     assert.notEqual(result.success, false, 'agent-browser command failed');
     return result.data;
   } catch {
-    throw new Error(`agent-browser ${args[0]} failed. Browser output is suppressed to protect authentication.`);
+    throw new Error(`agent-browser ${args[0]} failed during ${phase}. Browser output is suppressed to protect authentication.`);
   }
 }
 function evaluate(code) { return ab('eval', code).result; }
@@ -77,6 +78,7 @@ try {
     server = spawn(process.execPath, ['-e', serverCode, resolve(root, 'tests/e2e/player.html'), String(address.port)], { stdio: 'ignore' });
     await new Promise((done, reject) => { server.once('error', reject); setTimeout(done, 300); });
     for (const scenario of scenarios) {
+      phase = scenario.id;
       configure(scenario.settings);
       const startedAt = Date.now();
       const trackId = scenario.id.replace(/-/g, '');
@@ -117,9 +119,11 @@ try {
     }
   } else {
     const track = assertLiveTrack(process.env.SPOTIFY_E2E_TRACK_ID);
+    phase = 'cookie import';
     if (process.env.SPOTIFY_E2E_COOKIE_FILE) {
       importCookies(JSON.parse(readFileSync(resolve(process.env.SPOTIFY_E2E_COOKIE_FILE), 'utf8')), ab);
     }
+    phase = 'Spotify authentication';
     open('https://open.spotify.com/');
     try {
       ab('wait', '--fn', "!!document.querySelector('[data-testid=\"user-widget-link\"], [data-testid=\"user-widget-avatar\"]') && !document.querySelector('[data-testid=\"login-button\"]')");
@@ -133,12 +137,15 @@ try {
       })`);
       throw new Error('Spotify login check timed out: ' + JSON.stringify(status));
     }
+    phase = 'extension settings';
     const originalSettings = storage("chrome.storage.local.get('settings').then(x=>x.settings||null)");
     const url = `https://open.spotify.com/track/${track}`;
     configure({ enabled: false, thresholdRatio: 0.9, minSoundedMs: 60000 });
+    phase = 'Spotify track play button';
     open(url);
     ab('wait', '[data-testid="play-button"]');
     ab('click', '[data-testid="play-button"]');
+    phase = 'Spotify playback start';
     ab('wait', '--fn', `!!document.querySelector('[data-testid="now-playing-widget"] a[href*="${track}"]') && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label')==='Pause'`);
     const likeButton = '[data-testid="now-playing-widget"] button[aria-checked]';
     async function liked(next) {
@@ -208,7 +215,20 @@ try {
     }
   }
 } catch (error) {
-  results.push({ status: 'failed', error: error.message });
+  let diagnostics;
+  if (mode === 'live') {
+    try {
+      diagnostics = evaluate(`({
+        playButton: !!document.querySelector('[data-testid="play-button"]'),
+        playing: document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label') === 'Pause',
+        expectedTrack: !!document.querySelector('[data-testid="now-playing-widget"] a[href*="' + ${JSON.stringify(process.env.SPOTIFY_E2E_TRACK_ID)} + '"]'),
+        progress: Number(document.querySelector('[data-testid="playback-progressbar"] input')?.value),
+        duration: Number(document.querySelector('[data-testid="playback-progressbar"] input')?.max),
+        adVisible: !!document.querySelector('[data-testid="ad-slot"], [data-testid="advertisement"]')?.getClientRects().length
+      })`);
+    } catch { diagnostics = { unavailable: true }; }
+  }
+  results.push({ status: 'failed', error: error.message, phase, diagnostics });
   process.exitCode = 1;
   try { screenshot('failure'); } catch { /* A failed screenshot must not hide the original error. */ }
   console.error(error.message);
