@@ -144,7 +144,10 @@ try {
     }
     phase = 'extension settings';
     const originalSettings = storage("chrome.storage.local.get('settings').then(x=>x.settings||null)");
-    const restoreSettings = () => storage(originalSettings === null ? "chrome.storage.local.remove('settings')" : `chrome.storage.local.set({settings:${JSON.stringify(originalSettings)}})`);
+    const restoreSettings = () => {
+      storage(originalSettings === null ? "chrome.storage.local.remove('settings')" : `chrome.storage.local.set({settings:${JSON.stringify(originalSettings)}})`);
+      assert.deepEqual(storage("chrome.storage.local.get('settings').then(x=>x.settings||null)"), originalSettings, 'original extension settings restored');
+    };
     restore = async () => { restoreSettings(); };
     const url = `https://open.spotify.com/track/${track}`;
     const playButton = '[data-testid="action-bar-row"] [data-testid="play-button"]';
@@ -211,6 +214,7 @@ try {
         open(url);
         ab('wait', likeButton);
         assert.equal(await liked(null), initialLiked, 'original liked state restored after reload');
+        screenshot('restored');
       } finally { restoreSettings(); }
     };
     for (const startLiked of [false, true]) {
@@ -232,18 +236,29 @@ try {
         ab('wait', '--fn', playingRequestedSong);
         const startPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
         assert(Number.isFinite(startPosition), 'live progress control readable');
-        wait(reached ? 15000 : 4000);
+        const undo = reached && !startLiked;
+        if (undo) ab('wait', '[data-testid="music-saver-undo"]');
+        else wait(reached ? 15000 : 4000);
         const endPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
-        assert(endPosition > startPosition + (reached ? 6000 : 1000), `live song really progressed: ${startPosition} -> ${endPosition}`);
+        assert(endPosition >= startPosition + (reached ? 6000 : 1000), `live song really progressed: ${startPosition} -> ${endPosition}`);
         const after = await liked(null);
         const name = `${startLiked ? 'liked' : 'unliked'}-${reached ? 'reached' : 'below'}`;
         screenshot(name);
+        let afterUndo;
+        if (undo) {
+          ab('click', '[data-testid="music-saver-undo"]');
+          wait(1500);
+          afterUndo = await liked(null);
+          assert.equal(afterUndo, false, 'live Undo removes the saved song');
+          screenshot('undo');
+        }
         const observed = events();
         const expected = reached ? (startLiked ? 'skip' : 'save') : null;
         assert.equal(after, startLiked || reached, `${name}: live liked state`);
-        assert.deepEqual(observed.recent.map(e=>e.kind), expected ? [expected] : [], `${name}: extension activity`);
+        assert.deepEqual(observed.recent.map(e=>e.kind), undo ? ['save', 'undo'] : expected ? [expected] : [], `${name}: extension activity`);
         assert.equal(observed.pending.length, 0, `${name}: no failed actions`);
         results.push({ id: name, status: 'passed', startLiked, after, expected, progressMs: endPosition-startPosition });
+        if (undo) results.push({ id: 'undo', status: 'passed', after: afterUndo });
         console.log(`PASS live ${name}`);
       }
     }

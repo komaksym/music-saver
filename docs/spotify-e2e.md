@@ -24,12 +24,18 @@ extension clock or replace eligibility logic.
 `node scripts/spotify-e2e.mjs live` runs the real extension against a Spotify song. It
 crosses liked
 and unliked states with reached and unreached settings. It verifies real progress,
-Liked Songs state, the background log, and an empty retry queue. The reached case uses
+Liked Songs state, the background log, and an empty retry queue. The eligible unliked
+case also clicks the real Undo toast and checks removal plus the save and undo log entries.
+The runner matches the playing title and artist against the requested track page.
+Each case starts playback explicitly after navigation. The reached case uses
 a six-second floor and a one-percent ratio to bound CI time. It does not verify the
 default 60-second floor through live playback. The fixture covers independent ratio
 and floor limits. Existing eligibility unit tests cover the default settings.
 
 The live runner restores the original liked state and extension settings on exit.
+It reloads the song to verify the liked state and reads the settings back after restoration.
+A restored-state screenshot records successful cleanup. Failure results include safe
+phase and player diagnostics. Cookie values and general page content stay suppressed.
 A cleanup failure fails the check. A terminated runner cannot guarantee cleanup.
 Use a dedicated test account and a disposable song, never a personal account.
 Live tests cannot force Spotify to serve an advertisement. Ad cases use explicit
