@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scenarios, assertLiveTrack } from '../tests/e2e/scenarios.mjs';
+import { importCookies } from './spotify-e2e-cookies.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const mode = process.argv[2];
@@ -116,7 +117,9 @@ try {
     }
   } else {
     const track = assertLiveTrack(process.env.SPOTIFY_E2E_TRACK_ID);
-    if (process.env.SPOTIFY_E2E_COOKIE_FILE) ab('cookies', 'set', '--curl', resolve(process.env.SPOTIFY_E2E_COOKIE_FILE));
+    if (process.env.SPOTIFY_E2E_COOKIE_FILE) {
+      importCookies(JSON.parse(readFileSync(resolve(process.env.SPOTIFY_E2E_COOKIE_FILE), 'utf8')), ab);
+    }
     open('https://open.spotify.com/');
     ab('wait', '--fn', "!!document.querySelector('[data-testid=\"user-widget-link\"], [data-testid=\"user-widget-avatar\"]') && !document.querySelector('[data-testid=\"login-button\"]')");
     const originalSettings = storage("chrome.storage.local.get('settings').then(x=>x.settings||null)");

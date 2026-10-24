@@ -89,3 +89,31 @@ must fail the live job, never produce a green skip.
 ## Open questions
 
 - None. All questions Q1-Q11 answered; any new fork gets a new ADR.
+
+## E2E session pickup
+
+### Summary
+
+Continue PR #20's existing browser suite. Keep controlled-player coverage separate
+from authenticated Spotify playback. Missing live proof remains UNVERIFIED.
+
+### Milestones
+
+1. Recover the prior session and confirm the current PR head. Completed at a0672ca.
+2. Run the fixture and live jobs explicitly on that head. The live job exposed an
+   unsupported cookie import command before playback began.
+3. Add a failing cookie-import regression test, reuse the existing CLI argument
+   builder, and confirm the documented run commands.
+4. Run lint, tests, build, and the isolated Linux browser jobs on the final head.
+   Inspect screenshots and preserve results. Report authentication or playback
+   failures without treating fixture results as live proof.
+
+### Throughput checkpoint
+
+- Blocking first steps. Recover the PR head and reproduce the live failure before edits.
+- Independent workstreams. A worker owns the runner, regression test, and E2E guide.
+  The parent owns this plan and hosted browser verification.
+- Shared mutable state. Each writer has its own worktree. Live runs serialize on
+  the workflow's dedicated-account concurrency group.
+- Smallest safe decomposition. One worker owns the coupled cookie-import fix.
+  Additional writers would split one small change without useful independence.
