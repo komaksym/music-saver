@@ -34,6 +34,7 @@ const options = `chrome-extension://${id}/options.html`;
 const session = `ms-${mode}-${process.pid}`;
 const flags = ['--session', session, '--profile', resolve(profile), '--extension', extension, '--headed', '--json'];
 let phase = 'browser launch';
+let requestedSong;
 function ab(...args) {
   try {
     const raw = execFileSync('agent-browser', [...flags, ...args], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -139,15 +140,23 @@ try {
     }
     phase = 'extension settings';
     const originalSettings = storage("chrome.storage.local.get('settings').then(x=>x.settings||null)");
+    const restoreSettings = () => storage(originalSettings === null ? "chrome.storage.local.remove('settings')" : `chrome.storage.local.set({settings:${JSON.stringify(originalSettings)}})`);
+    restore = async () => { restoreSettings(); };
     const url = `https://open.spotify.com/track/${track}`;
     const playButton = '[data-testid="action-bar-row"] [data-testid="play-button"]';
     configure({ enabled: false, thresholdRatio: 0.9, minSoundedMs: 60000 });
     phase = 'Spotify track play button';
     open(url);
     ab('wait', playButton);
+    requestedSong = evaluate(`({
+      title: document.querySelector('main h1')?.textContent.trim(),
+      artist: [...document.querySelectorAll('main a[href*="/artist/"]')].map(link => link.textContent.trim()).find(Boolean)
+    })`);
+    assert(requestedSong.title && requestedSong.artist, 'requested track page identifies its title and artist');
+    const playingRequestedSong = `document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]')?.textContent.trim() === ${JSON.stringify(requestedSong.title)} && document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"]')?.textContent.trim() === ${JSON.stringify(requestedSong.artist)} && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label') === 'Pause'`;
     ab('click', playButton);
     phase = 'Spotify playback start';
-    ab('wait', '--fn', `!!document.querySelector('[data-testid="now-playing-widget"] a[href*="${track}"]') && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label')==='Pause'`);
+    ab('wait', '--fn', playingRequestedSong);
     const likeButton = '[data-testid="now-playing-widget"] button[aria-checked]';
     async function liked(next) {
       return evaluate(`(async()=>{
@@ -183,7 +192,7 @@ try {
       ab('wait', likeButton);
       await liked(initialLiked);
       assert.equal(await liked(null), initialLiked, 'original liked state restored');
-      storage(originalSettings === null ? "chrome.storage.local.remove('settings')" : `chrome.storage.local.set({settings:${JSON.stringify(originalSettings)}})`);
+      restoreSettings();
     };
     for (const startLiked of [false, true]) {
       for (const reached of [false, true]) {
@@ -196,7 +205,7 @@ try {
         open(url); ab('wait', playButton);
         const paused = evaluate("document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')!=='Pause'");
         if(paused) ab('click', playButton);
-        ab('wait', '--fn', `!!document.querySelector('[data-testid="now-playing-widget"] a[href*="${track}"]') && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label')==='Pause'`);
+        ab('wait', '--fn', playingRequestedSong);
         const startPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
         assert(Number.isFinite(startPosition), 'live progress control readable');
         wait(reached ? 15000 : 4000);
@@ -227,10 +236,8 @@ try {
           inActionBar: !!button.closest('[data-testid="action-bar-row"]')
         })),
         playing: document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label') === 'Pause',
-        expectedTrack: !!document.querySelector('[data-testid="now-playing-widget"] a[href*="' + ${JSON.stringify(process.env.SPOTIFY_E2E_TRACK_ID)} + '"]'),
-        widgetTrackIds: [...new Set([...document.querySelectorAll('[data-testid="now-playing-widget"] a')]
-          .flatMap(link => ['href', 'data-uri', 'data-context-uri'].map(name => link.getAttribute(name) || ''))
-          .flatMap(value => [...value.matchAll(/(?:spotify(?::|%3A)track(?::|%3A)|\\/track\\/)([A-Za-z0-9]{22})/gi)].map(match => match[1])))],
+        songTitleMatches: document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]')?.textContent.trim() === ${JSON.stringify(requestedSong?.title || '')},
+        songArtistMatches: document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"]')?.textContent.trim() === ${JSON.stringify(requestedSong?.artist || '')},
         progress: Number(document.querySelector('[data-testid="playback-progressbar"] input')?.value),
         duration: Number(document.querySelector('[data-testid="playback-progressbar"] input')?.max),
         adVisible: !!document.querySelector('[data-testid="ad-slot"], [data-testid="advertisement"]')?.getClientRects().length
