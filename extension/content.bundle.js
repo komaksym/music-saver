@@ -239,6 +239,10 @@ function rangeMs(range) {
 }
 
 function readPlayback(doc, wallMs) {
+  for (const selector of ['[data-testid="ad-slot"]', '[data-testid="advertisement"]']) {
+    const ad = doc.querySelector(selector);
+    if (ad && ad.getClientRects().length > 0) return null;
+  }
   let playBtn = null;
   try {
     playBtn = doc.querySelector(SELECTORS.playPause);
@@ -274,10 +278,18 @@ function readLikeHint(doc) {
 class SoundedTimeSampler {
   constructor() {
     this.prev = null;
+    // Playing-side wall clock and credited total implement the sounded-time
+    // budget: progress credits against accumulated playing time, not against
+    // a single tick gap. Spotify refreshes the progress bar in multi-second
+    // steps in background tabs, so per-tick clipping structurally undercounts.
+    this.playingWallMs = 0;
+    this.creditedMs = 0;
   }
 
   reset() {
     this.prev = null;
+    this.playingWallMs = 0;
+    this.creditedMs = 0;
   }
 
   observe(sample) {
@@ -287,12 +299,21 @@ class SoundedTimeSampler {
     }
     const prev = this.prev;
     this.prev = sample;
-    if (!prev || !prev.track || prev.track.id !== sample.track.id) return 0;
+    if (!prev || !prev.track || prev.track.id !== sample.track.id) {
+      this.playingWallMs = 0;
+      this.creditedMs = 0;
+      return 0;
+    }
     if (!prev.playing || !sample.playing) return 0;
     const wall = sample.wallMs - prev.wallMs;
+    if (!(wall > 0)) return 0;
+    this.playingWallMs += wall;
     const progress = sample.positionMs - prev.positionMs;
-    if (!(wall > 0) || !(progress > 0)) return 0;
-    return Math.min(progress, wall);
+    if (!(progress > 0)) return 0;
+    const delta = Math.min(progress, Math.max(0, this.playingWallMs - this.creditedMs));
+    if (!(delta > 0)) return 0;
+    this.creditedMs += delta;
+    return delta;
   }
 }
 
@@ -566,7 +587,7 @@ class UndoToast {
     try {
       if (el.style) {
         el.style.cssText =
-          "position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
+          "display:block!important;position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
           "background:#191414;color:#fff;padding:10px 14px;border-radius:8px;" +
           "font:14px system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4);";
       }
@@ -683,7 +704,10 @@ class WatchLoop {
     } catch (e) {
       return null;
     }
-    if (!sample || !sample.track || !(sample.durationMs > 0)) return null;
+    if (!sample || !sample.track || !(sample.durationMs > 0)) {
+      this.sampler.reset();
+      return null;
+    }
     if (sample.track.id !== this.lastPolledId) {
       this.lastPolledId = sample.track.id;
       this.lastRetryPollMs = now;
@@ -831,12 +855,25 @@ class WatchLoop {
   }
 }
 
+// The shipped manifest matches only Spotify, so the loop boots there. The E2E
+// runner patches a temp manifest to add loopback and serves the player fixture
+// from it, so that host must boot too.
+function shouldBoot(href) {
+  let url;
+  try {
+    url = new URL(String(href || ""));
+  } catch (e) {
+    return false;
+  }
+  if (url.hostname === "open.spotify.com") return true;
+  return url.protocol === "http:" && url.hostname === "127.0.0.1";
+}
+
 function liveBoot() {
   try {
     if (typeof document === "undefined") return;
     if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.sendMessage) return;
-    const href = String((typeof location !== "undefined" && location.href) || "");
-    if (!href.includes("open.spotify.com")) return;
+    if (!shouldBoot((typeof location !== "undefined" && location.href) || "")) return;
     const sendMessage = (msg) =>
       new Promise((resolve) => {
         try {

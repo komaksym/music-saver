@@ -4,9 +4,9 @@ on:
   # Only main-owned scripts run. PR content is read as API data, never executed.
   pull_request_target: # zizmor: ignore[dangerous-triggers]
     types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft]
-  # A verdict posted before cubic-gate or the Cubic App reports stays red until this re-runs it.
+  # A verdict posted before pr-ready copies in the final checks stays red until this re-runs it.
   workflow_run: # zizmor: ignore[dangerous-triggers]
-    workflows: [cubic-gate, pr-ready]
+    workflows: [pr-ready]
     types: [completed]
   workflow_dispatch:
     inputs:

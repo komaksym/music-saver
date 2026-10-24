@@ -9,12 +9,14 @@ const browserGlobals = {
   location: "readonly",
   setInterval: "readonly",
   setTimeout: "readonly",
+  URL: "readonly",
   URLSearchParams: "readonly",
 };
 
 const nodeGlobals = {
   console: "readonly",
   process: "readonly",
+  setTimeout: "readonly",
 };
 
 export default [

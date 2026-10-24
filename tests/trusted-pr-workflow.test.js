@@ -14,7 +14,7 @@ function trigger(name) {
 }
 
 test('the policy re-runs when a gate it requires completes', () => {
-  const gates = ['cubic-gate', 'pr-ready'].map(name =>
+  const gates = ['pr-ready'].map(name =>
     readFileSync(new URL(`.github/workflows/${name}.yml`, root), 'utf8').match(/^name: (.+)$/m)[1].trim());
   const run = trigger('workflow_run');
   assert.match(run, /types: \[completed\]/, 'the re-run must fire when the gate completes');
