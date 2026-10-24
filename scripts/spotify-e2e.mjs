@@ -408,6 +408,11 @@ try {
         songTitleMatches: document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]')?.textContent.trim() === ${JSON.stringify(requestedSong?.title || '')},
         songArtistMatches: document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"]')?.textContent.trim() === ${JSON.stringify(requestedSong?.artist || '')},
         nowPlayingTrackId: (${nowPlayingTrackId}),
+        playerLinks: [...document.querySelectorAll('[data-testid="now-playing-widget"] a')].map(a => ({
+          testId: a.getAttribute('data-testid'), href: a.getAttribute('href'),
+          dataUri: a.getAttribute('data-uri'), dataContextUri: a.getAttribute('data-context-uri'),
+          contextType: a.getAttribute('data-context-item-type'), text: a.textContent.trim()
+        })),
         undoObservation: window.__msE2EUndo || null,
         progress: Number(document.querySelector('[data-testid="playback-progressbar"] input')?.value),
         duration: Number(document.querySelector('[data-testid="playback-progressbar"] input')?.max),
