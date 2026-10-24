@@ -4,6 +4,33 @@
 
 Spotify-first Chromium extension that auto-saves tracks the user listens through while working. Design is fully locked: Liked Songs destination, sounded-time 90 percent plus 60s floor once per track ID, auto-save with Undo toast and local log, check-then-skip already-saved tracks, retry queue with backoff plus manual retry, settings with threshold 90 plus floor 60s plus enable-disable, Spotify web scope, public repo. Q11 answered NO Premium, so v1 drives the web player through a content script (ADR-0003) and the tested API client stays parked for a post-Premium future.
 
+## Trusted global PR gates
+
+### Summary
+
+Validate every pull request with PR8's gates, then block merges on the default branch.
+After this branch reaches `main`, ruleset 25511836 gains the required contexts `smoke` and `trusted-pr-policy`.
+Never select `~ALL`, because required checks there also block ordinary feature-branch pushes.
+Do not require the nightly-only `live` job. Do not copy deletion or non-fast-forward protections.
+Do not merge or activate until an independent reviewer approves the exact deployment head.
+Document the fork limit, the manual re-run command, and the two-PR flow for a pinned file or a script change.
+Port PR8's five-section pull request template, so a PR opened from the template already passes the heading check.
+
+### Milestones
+
+1. Inspect PR8 and PR18, then test rejected metadata and weaker workflow provenance before implementation.
+2. Add a metadata-only verifier and deployment workflow. Never execute PR code with its write token.
+   Document that Actions-owned check names cannot provide an independent trust anchor.
+   Require a dedicated App verdict or organization-required workflows before claiming tamper-proof global enforcement.
+   Port PR8's secretless PR smoke job and the scripts it runs. Require `smoke` in the manifest and the ready rollup.
+   Read pull-request runs only, so a newer push run cannot satisfy or reject the rollup.
+   Re-run the verdict when `pr-ready` or `cubic-gate` completes, so an early failure clears without a PR edit.
+   Cubic is not required: its trial quota ran out, so the owner removed both Cubic contexts from the ruleset and the policy.
+3. Verify locally and open a deployment PR against `main`. Preserve the remote ruleset snapshot.
+4. After merge, edit ruleset 25511836 to add `smoke` and `trusted-pr-policy`, confirm it targets the default branch only, and read back the API state.
+
+The throughput checkpoint is a tested deployment PR. Remote activation stays a separate step after that PR reaches `main`.
+
 ## Milestones
 
 ### M0 Repo and docs (done)

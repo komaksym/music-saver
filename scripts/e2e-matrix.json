@@ -1,0 +1,62 @@
+[
+  {
+    "track": "seed-liked-long",
+    "trackId": "7tFiyTwD0nx5a1eklYtX2J",
+    "uri": "spotify:track:7tFiyTwD0nx5a1eklYtX2J",
+    "openUrl": "https://open.spotify.com/track/7tFiyTwD0nx5a1eklYtX2J",
+    "durationMsHint": 354320,
+    "startLiked": true,
+    "listenPlan": "full",
+    "planArgs": { "settleMs": 6000, "timeoutMs": 60000 },
+    "expectedDelta": "none",
+    "cleanup": "none"
+  },
+  {
+    "track": "seed-unliked-long",
+    "trackId": "7LoBfKLpz4BGrxCuOzAKRz",
+    "uri": "spotify:track:7LoBfKLpz4BGrxCuOzAKRz",
+    "openUrl": "https://open.spotify.com/track/7LoBfKLpz4BGrxCuOzAKRz",
+    "durationMsHint": 207853,
+    "startLiked": false,
+    "listenPlan": "full",
+    "planArgs": { "settleMs": 6000, "timeoutMs": 60000 },
+    "expectedDelta": "save",
+    "cleanup": "unlike"
+  },
+  {
+    "track": "seed-unliked-short",
+    "trackId": "5H9q6ctIlamkqukdTrNt3k",
+    "uri": "spotify:track:5H9q6ctIlamkqukdTrNt3k",
+    "openUrl": "https://open.spotify.com/track/5H9q6ctIlamkqukdTrNt3k",
+    "durationMsHint": 25986,
+    "startLiked": false,
+    "listenPlan": "partial",
+    "planArgs": { "playMs": 12000, "settleMs": 4000, "timeoutMs": 30000 },
+    "expectedDelta": "none",
+    "cleanup": "none"
+  },
+  {
+    "track": "seed-unliked-seek-pause",
+    "trackId": "5ghIJDpPoe3CfHMGu71E6T",
+    "uri": "spotify:track:5ghIJDpPoe3CfHMGu71E6T",
+    "openUrl": "https://open.spotify.com/track/5ghIJDpPoe3CfHMGu71E6T",
+    "durationMsHint": 301920,
+    "startLiked": false,
+    "listenPlan": "seek-pause",
+    "planArgs": { "playMs": 8000, "pauseMs": 5000, "seekToMs": 240000, "resumeMs": 5000, "settleMs": 4000, "timeoutMs": 60000 },
+    "expectedDelta": "none",
+    "cleanup": "none"
+  },
+  {
+    "track": "seed-ad-break",
+    "trackId": "0VjIjW4GlUZAMYd2vXMi3b",
+    "uri": "spotify:track:0VjIjW4GlUZAMYd2vXMi3b",
+    "openUrl": "https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b",
+    "durationMsHint": 200040,
+    "startLiked": false,
+    "listenPlan": "ad-break",
+    "planArgs": { "playMs": 10000, "adWindowMs": 25000, "settleMs": 4000, "timeoutMs": 60000 },
+    "expectedDelta": "none",
+    "cleanup": "none"
+  }
+]

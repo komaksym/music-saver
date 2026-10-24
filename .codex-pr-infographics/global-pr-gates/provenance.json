@@ -1,0 +1,9 @@
+{
+  "skill": "baoyu-infographic",
+  "backend": "codex-imagegen",
+  "image_sha256": "2a9b21490e5982aa497b421d18455bb3517f2aa91d45aff6f5f5757472c431d0",
+  "prompt_sha256": "042ac6629a557de6f31950318d13905471a2c5d6c2caaebe5f077898a4437e9e",
+  "purpose": "Target design for one trusted PR standard across every target branch.",
+  "visual_note": "Viewed One PR standard. Every target branch. and Target design not a shipped implementation; all module labels are legible.",
+  "created_at": "2026-10-23T22:58:00.269205+00:00"
+}

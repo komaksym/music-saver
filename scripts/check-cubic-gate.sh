@@ -260,9 +260,9 @@ poll_once() {
     fi
     STATUS="$(printf '%s' "$VERDICT_JSON" | jq -r '.status')"
   fi
-  # Any derived verdict proves the API round succeeded, so the previous
-  # error is stale — including PENDING (no signal yet, not API failure).
-  LAST_ERROR=""
+  if [ "$STATUS" = "CLEAR" ] || [ "$STATUS" = "BLOCKED" ]; then
+    LAST_ERROR=""
+  fi
   return 0
 }
 
