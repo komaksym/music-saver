@@ -228,6 +228,9 @@ try {
         })),
         playing: document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label') === 'Pause',
         expectedTrack: !!document.querySelector('[data-testid="now-playing-widget"] a[href*="' + ${JSON.stringify(process.env.SPOTIFY_E2E_TRACK_ID)} + '"]'),
+        widgetTrackIds: [...new Set([...document.querySelectorAll('[data-testid="now-playing-widget"] a')]
+          .flatMap(link => ['href', 'data-uri', 'data-context-uri'].map(name => link.getAttribute(name) || ''))
+          .flatMap(value => [...value.matchAll(/(?:spotify(?::|%3A)track(?::|%3A)|\\/track\\/)([A-Za-z0-9]{22})/gi)].map(match => match[1])))],
         progress: Number(document.querySelector('[data-testid="playback-progressbar"] input')?.value),
         duration: Number(document.querySelector('[data-testid="playback-progressbar"] input')?.max),
         adVisible: !!document.querySelector('[data-testid="ad-slot"], [data-testid="advertisement"]')?.getClientRects().length
