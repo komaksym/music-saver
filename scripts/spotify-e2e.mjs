@@ -36,6 +36,15 @@ const session = `ms-${mode}-${process.pid}`;
 const flags = ['--session', session, '--profile', resolve(profile), '--extension', extension, '--headed', '--json'];
 let phase = 'browser launch';
 let requestedSong;
+const nowPlayingTrackId = `(() => {
+  const widget=document.querySelector('[data-testid="now-playing-widget"]');
+  const findAnchor=root=>root?.querySelector('a[data-testid="context-link"][data-context-item-type="track"], a[href*="spotify:track:"], a[href*="spotify%3Atrack%3A"], a[href*="/track/"]');
+  const anchor=findAnchor(widget)||findAnchor(document);
+  const candidates=anchor ? [anchor.getAttribute('href'),anchor.getAttribute('data-uri'),anchor.getAttribute('data-context-uri')].filter(Boolean) : [];
+  const pattern=new RegExp('(?:spotify:track:|spotify%3atrack%3a|/track/)([A-Za-z0-9]{22})(?:[/?#]|$)','i');
+  const ids=new Set(candidates.map(value=>value.match(pattern)?.[1]).filter(Boolean));
+  return ids.size===1 ? [...ids][0] : null;
+})()`;
 function ab(...args) {
   let output;
   try {
@@ -182,13 +191,6 @@ try {
       ab('record', 'start', recording, '--fps', '10', '--cursor');
       recordingStarted = true;
     }
-    const nowPlayingTrackId = `(() => {
-      const widget=document.querySelector('[data-testid="now-playing-widget"]');
-      const anchors=widget ? [...widget.querySelectorAll('a[data-testid="context-link"][data-context-item-type="track"], a[href*="spotify:track:"], a[href*="spotify%3Atrack%3A"], a[href*="/track/"]')] : [];
-      const pattern=new RegExp('(?:spotify:track:|spotify%3atrack%3a|/track/)([A-Za-z0-9]{22})(?:[/?#]|$)','i');
-      const ids=new Set(anchors.map(a=>a.href).map(href=>href.match(pattern)?.[1]).filter(Boolean));
-      return ids.size===1 ? [...ids][0] : null;
-    })()`;
     const playingRequestedSong = `document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]')?.textContent.trim() === ${JSON.stringify(requestedSong.title)} && document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"]')?.textContent.trim() === ${JSON.stringify(requestedSong.artist)} && (${nowPlayingTrackId}) === ${JSON.stringify(requestedSong.trackId)} && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label') === 'Pause'`;
     const progressingRequestedSong = `(() => {
       const position = Number(document.querySelector('[data-testid="playback-progressbar"] input')?.value);
@@ -205,9 +207,11 @@ try {
     function readNowPlayingIdentity() {
       return evaluate(`(() => {
         const widget=document.querySelector('[data-testid="now-playing-widget"]');
-        const anchors=widget ? [...widget.querySelectorAll('a[data-testid="context-link"][data-context-item-type="track"], a[href*="spotify:track:"], a[href*="spotify%3Atrack%3A"], a[href*="/track/"]')] : [];
+        const findAnchor=root=>root?.querySelector('a[data-testid="context-link"][data-context-item-type="track"], a[href*="spotify:track:"], a[href*="spotify%3Atrack%3A"], a[href*="/track/"]');
+        const anchor=findAnchor(widget)||findAnchor(document);
+        const candidates=anchor ? [anchor.getAttribute('href'),anchor.getAttribute('data-uri'),anchor.getAttribute('data-context-uri')].filter(Boolean) : [];
         const pattern=new RegExp('(?:spotify:track:|spotify%3atrack%3a|/track/)([A-Za-z0-9]{22})(?:[/?#]|$)','i');
-        const ids=new Set(anchors.map(a=>a.href).map(href=>href.match(pattern)?.[1]).filter(Boolean));
+        const ids=new Set(candidates.map(value=>value.match(pattern)?.[1]).filter(Boolean));
         return {
           trackId: ids.size===1 ? [...ids][0] : null,
           title: document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]')?.textContent.trim() || null,
@@ -403,6 +407,7 @@ try {
         playing: document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label') === 'Pause',
         songTitleMatches: document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]')?.textContent.trim() === ${JSON.stringify(requestedSong?.title || '')},
         songArtistMatches: document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"]')?.textContent.trim() === ${JSON.stringify(requestedSong?.artist || '')},
+        nowPlayingTrackId: (${nowPlayingTrackId}),
         undoObservation: window.__msE2EUndo || null,
         progress: Number(document.querySelector('[data-testid="playback-progressbar"] input')?.value),
         duration: Number(document.querySelector('[data-testid="playback-progressbar"] input')?.max),
