@@ -8,11 +8,12 @@ Spotify-first Chromium extension that auto-saves tracks the user listens through
 
 ### Summary
 
-Add a default-branch metadata policy before considering a separate all-branch check ruleset.
-Keep ruleset 25511836 unchanged. Propose a separate all-branch PR-check ruleset.
+Validate every pull request with PR8's gates, then block merges on the default branch.
+After this branch reaches `main`, ruleset 25511836 gains the required contexts `smoke` and `trusted-pr-policy`.
+Never select `~ALL`, because required checks there also block ordinary feature-branch pushes.
 Do not require the nightly-only `live` job. Do not copy deletion or non-fast-forward protections.
-All-branch required checks can also block ordinary feature-branch updates. Resolve this platform constraint before activation.
 Do not merge or activate until an independent reviewer approves the exact deployment head.
+Document the fork limit, the manual re-run command, and the two-PR flow for a pinned file.
 
 ### Milestones
 
@@ -22,10 +23,11 @@ Do not merge or activate until an independent reviewer approves the exact deploy
    Require a dedicated App verdict or organization-required workflows before claiming tamper-proof global enforcement.
    Port PR8's secretless PR smoke job and the scripts it runs. Require `smoke` in the manifest and the ready rollup.
    Read pull-request runs only, so a newer push run cannot satisfy or reject the rollup.
+   Re-run the verdict when `cubic-gate` or `pr-ready` completes, so an early failure clears without a PR edit.
 3. Verify locally and open a deployment PR against `main`. Preserve the remote ruleset snapshot.
-4. After reviewed deployment, activate the additional trusted context and all-branch scope, then read back the API state.
+4. After merge, edit ruleset 25511836 to add `smoke` and `trusted-pr-policy`, confirm it targets the default branch only, and read back the API state.
 
-The throughput checkpoint is a tested deployment PR. Remote activation remains blocked until that PR reaches `main`.
+The throughput checkpoint is a tested deployment PR. Remote activation stays a separate step after that PR reaches `main`.
 
 ## Milestones
 
