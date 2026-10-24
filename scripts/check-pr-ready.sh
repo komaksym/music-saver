@@ -44,7 +44,7 @@ if len(raw) < 300:
         f"expand every template section ({FIX_TMPL})"
     )
 
-HEADS = ["## Problem", "## Evidence", "## Changes", "## Validation", "## Visual", "## Risks"]
+HEADS = ["## Summary", "## Validation", "## Risks / Notes", "## Breaking changes", "## Visual summary"]
 pos = {}
 for h in HEADS:
     m = re.search(r"(?m)^" + re.escape(h) + r"[ \t]*$", raw)
@@ -58,7 +58,7 @@ if len(pos) == len(HEADS):
     if order != sorted(order):
         errs.append(
             "pr-ready: sections out of order; keep template order "
-            "Problem, Evidence, Changes, Validation, Visual, Risks "
+            "Summary, Validation, Risks / Notes, Breaking changes, Visual summary "
             f"({FIX_TMPL})"
         )
     spans = {}
@@ -74,11 +74,11 @@ if len(pos) == len(HEADS):
         return re.sub(r"\s+", " ", sec).strip()
 
     MINIMA = {
-        "## Problem": 40,
-        "## Evidence": 40,
-        "## Changes": 40,
+        "## Summary": 40,
         "## Validation": 40,
-        "## Risks": 4,
+        "## Risks / Notes": 4,
+        "## Breaking changes": 4,
+        "## Visual summary": 4,
     }
     for h, need in MINIMA.items():
         got = len(substance(spans[h]))
@@ -88,29 +88,29 @@ if len(pos) == len(HEADS):
                 f"write at least one full sentence ({FIX_TMPL})"
             )
 
-    imgs = re.findall(r"!\[[^\]]*\]\(([^)]*)\)", spans["## Visual"])
+    imgs = re.findall(r"!\[[^\]]*\]\(([^)]*)\)", spans["## Visual summary"])
     PLACEHOLDERS = ("paste-image-url-here", "example.test", "placeholder")
     real = [u for u in imgs if u.strip() and not any(p in u for p in PLACEHOLDERS)]
     html_pages = [u for u in real
                   if "github.com/" in u and "/blob/" in u and "raw=true" not in u]
     if html_pages:
         errs.append(
-            "pr-ready: Visual image URL serves an HTML page, not image bytes; "
+            "pr-ready: Visual summary image URL serves an HTML page, not image bytes; "
             "use a raw.githubusercontent.com URL or append ?raw=true "
             f"({FIX_TMPL})"
         )
     if not real:
         errs.append(
-            "pr-ready: Visual section has no real infographic image; "
+            "pr-ready: Visual summary section has no real infographic image; "
             "generate one with the baoyu-infographic skill, commit it under "
-            ".codex-pr-infographics/, and link it in the Visual section"
+            ".codex-pr-infographics/, and link it in the Visual summary section"
         )
 
 if errs:
     for e in errs:
         print(e, file=sys.stderr)
     sys.exit(1)
-print(f"pr-ready: body ok ({len(raw)} chars, 6/6 sections, infographic present)")
+print(f"pr-ready: body ok ({len(raw)} chars, 5/5 sections, infographic present)")
 PYEOF
   then
     FAIL=1
