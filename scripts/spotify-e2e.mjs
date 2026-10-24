@@ -36,13 +36,16 @@ const flags = ['--session', session, '--profile', resolve(profile), '--extension
 let phase = 'browser launch';
 let requestedSong;
 function ab(...args) {
+  let output;
   try {
-    const raw = execFileSync('agent-browser', [...flags, ...args], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
-    const result = JSON.parse(raw);
+    output = execFileSync('agent-browser', [...flags, ...args], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
+    const result = JSON.parse(output);
     assert.notEqual(result.success, false, 'agent-browser command failed');
     return result.data;
-  } catch {
-    throw new Error(`agent-browser ${args[0]} failed during ${phase}. Browser output is suppressed to protect authentication.`);
+  } catch (error) {
+    const detail = String(error.stdout || output || '') + String(error.stderr || '');
+    const reason = ['no song Like control', 'no Liked Songs row', 'no Cancel', 'strict mode violation', 'Timeout'].find(value => detail.includes(value));
+    throw new Error(`agent-browser ${args[0]} failed during ${phase}${reason ? ` (${reason})` : ''}. Browser output is suppressed to protect authentication.`, { cause: error });
   }
 }
 function evaluate(code) { return ab('eval', code).result; }
@@ -185,6 +188,8 @@ try {
         if(!cancel)throw Error('no Cancel');cancel.click();return before;
       })()`);
     }
+    phase = 'initial Liked Songs state';
+    ab('wait', likeButton);
     const initialLiked = await liked(null);
     restore = async () => {
       storage("chrome.storage.local.set({settings:{enabled:false,thresholdRatio:0.9,minSoundedMs:60000}})");
@@ -235,6 +240,12 @@ try {
     try {
       diagnostics = evaluate(`({
         playButton: !!document.querySelector('[data-testid="play-button"]'),
+        likeControls: [...document.querySelectorAll('[data-testid="now-playing-widget"] button')].map(button => ({
+          testId: button.getAttribute('data-testid'),
+          label: button.getAttribute('aria-label'),
+          checked: button.getAttribute('aria-checked'),
+          pressed: button.getAttribute('aria-pressed')
+        })),
         playButtons: [...document.querySelectorAll('[data-testid="play-button"]')].map(button => ({
           visible: !!button.getClientRects().length && getComputedStyle(button).visibility !== 'hidden',
           disabled: button.disabled,
