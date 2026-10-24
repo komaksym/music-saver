@@ -6,7 +6,7 @@ import { evaluate } from '../scripts/trusted-pr-policy.mjs';
 const sha = 'a'.repeat(40);
 const policy = {
   files: { '.github/workflows/ci.yml': [digest('approved workflow')], 'scripts/validator.sh': [digest('approved validator')] },
-  scripts: { test: 'node --test tests/*.test.js' },
+  scripts: [{ test: 'node --test tests/*.test.js' }, { test: 'node --test tests/*.test.js', lint: 'eslint .' }],
   checks: [{ context: 'ci', app: 15368, path: '.github/workflows/ci.yml' },
     { context: 'cubic · AI code reviewer', app: 1082092 }],
 };
@@ -18,7 +18,7 @@ function snapshot() {
       head: { sha }, base: { repo: { full_name: 'komaksym/music-saver' } } },
     commits: [{ sha, parents: [{}], commit: { message: 'fix: preserve policy\n\nExplain the change.' } }],
     files: { '.github/workflows/ci.yml': 'approved workflow', 'scripts/validator.sh': 'approved validator',
-      'package.json': JSON.stringify({ scripts: policy.scripts }) },
+      'package.json': JSON.stringify({ scripts: policy.scripts[0] }) },
     checks: [
       { id: 2, name: 'ci', app: { id: 15368 }, head_sha: sha, status: 'completed', conclusion: 'success', check_suite: { id: 10 } },
       { id: 3, name: 'cubic · AI code reviewer', app: { id: 1082092 }, head_sha: sha, status: 'completed', conclusion: 'success' },
@@ -64,6 +64,12 @@ test('rejects weak workflows, validators, and package commands', () => {
   reject(d => { d.files['.github/workflows/ci.yml'] = 'echo success'; }, /approved policy/);
   reject(d => { delete d.files['scripts/validator.sh']; }, /approved policy/);
   reject(d => { d.files['package.json'] = '{"scripts":{"test":"true"}}'; }, /package scripts/);
+  reject(d => { d.files['package.json'] = '{"scripts":{"test":"node --test tests/*.test.js","lint":"true"}}'; }, /package scripts/);
+});
+test('accepts any approved script set so a script change can land in two PRs', () => {
+  const data = snapshot();
+  data.files['package.json'] = JSON.stringify({ scripts: policy.scripts[1] });
+  assert.deepEqual(evaluate(data, policy), []);
 });
 test('rejects spoofed names from wrong apps or workflow paths', () => {
   reject(d => { d.checks[0].app.id = 9; }, /ci/);

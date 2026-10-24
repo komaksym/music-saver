@@ -15,12 +15,14 @@
     "scripts/e2e-cookies.mjs": ["00c4e45cc393e4d4d1c5cad48c43d2293819e776e36abaa1a07a0eeded312389"],
     "scripts/e2e-harness.sh": ["ea0c719ac4afffc90e05f0759dbd224eccc508581ee55b9ed0f4b75c845783e6"]
   },
-  "scripts": {
-    "lint": "eslint extension scripts",
-    "test": "node --test tests/*.test.js",
-    "build": "node scripts/bundle-content.mjs",
-    "verify": "npm test && npm run build && node --check extension/background.js && node --check extension/content.js && node --check extension/content.bundle.js && node --check extension/options.js"
-  },
+  "scripts": [
+    {
+      "lint": "eslint extension scripts",
+      "test": "node --test tests/*.test.js",
+      "build": "node scripts/bundle-content.mjs",
+      "verify": "npm test && npm run build && node --check extension/background.js && node --check extension/content.js && node --check extension/content.bundle.js && node --check extension/options.js"
+    }
+  ],
   "checks": [
     { "context": "ci", "app": 15368, "path": ".github/workflows/ci.yml" },
     { "context": "pr-title", "app": 15368, "path": ".github/workflows/pr-title.yml" },

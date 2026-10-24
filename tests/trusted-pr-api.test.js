@@ -22,7 +22,7 @@ function fixture() {
     throw new Error(`Unexpected API request: ${path}`);
   };
   return { pull, api, calls, overrides, readCount: () => reads,
-    options: { api, repo, number: 1, policy: { files: {}, scripts: {}, checks: [] } } };
+    options: { api, repo, number: 1, policy: { files: {}, scripts: [{}], checks: [] } } };
 }
 test('reads metadata and blobs only and rereads the PR before returning success', async () => {
   const f = fixture();

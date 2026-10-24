@@ -39,7 +39,8 @@ export function evaluate(data, policy) {
   }
   let scripts;
   try { scripts = JSON.parse(data.files['package.json']).scripts; } catch { /* Report the invalid package below. */ }
-  if (JSON.stringify(Object.entries(scripts || {}).sort()) !== JSON.stringify(Object.entries(policy.scripts).sort())) {
+  const scriptKey = set => JSON.stringify(Object.entries(set || {}).sort());
+  if (!policy.scripts.map(scriptKey).includes(scriptKey(scripts))) {
     errors.push('package scripts do not match approved policy');
   }
   for (const required of policy.checks) {

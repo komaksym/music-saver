@@ -24,9 +24,11 @@ test('approved policy hashes match the committed files', () => {
   }
 });
 
-test('approved package scripts match package.json', () => {
+test('package.json scripts match one approved script set', () => {
   const { scripts } = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'));
-  assert.deepEqual(Object.entries(scripts).sort(), Object.entries(policy.scripts).sort());
+  const key = set => JSON.stringify(Object.entries(set).sort());
+  assert.ok(Array.isArray(policy.scripts) && policy.scripts.length > 0, 'policy.scripts is a nonempty list of approved sets');
+  assert.ok(policy.scripts.map(key).includes(key(scripts)), 'package.json scripts match an approved set');
 });
 
 test('every policy check names a workflow file that defines its job', () => {
