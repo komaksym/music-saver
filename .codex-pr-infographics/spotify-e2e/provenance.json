@@ -1,0 +1,9 @@
+{
+  "skill": "baoyu-infographic",
+  "backend": "codex-imagegen",
+  "image_sha256": "5e733373c502d5c744ae985fd1f9acebdf98e9360b62d29c1596a1951c60a896",
+  "prompt_sha256": "a7c2e08a7856c427f20a5398591995e339394919ca3317133172c59cce9d1396",
+  "purpose": "Explain the separate controlled-player and live-Spotify browser checks.",
+  "visual_note": "Viewed the final PNG. It reads 'Controlled player matrix', 'Live Spotify songs', and 'Controlled fixtures are not live Spotify evidence'. Labels are readable and the two lanes remain distinct.",
+  "created_at": "2026-10-23T23:24:59Z"
+}
