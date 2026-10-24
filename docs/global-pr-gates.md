@@ -84,9 +84,9 @@ A fork-origin run therefore has no pull request number. The policy logs that cas
 so the required context stays missing. The `ready` rollup finds no eligible run for the same reason and waits until its deadline.
 
 The policy reads the manifest and scripts from `main`. A PR that edits a pinned file, or adds or removes a `package.json` script,
-fails until the manifest allows the new content. Land a manifest-only PR first, because the manifest itself is not pinned.
-Keep the old hash in the array during the transition so other open PRs still pass, then land the PR that edits the pinned file.
-A third PR removes the old hash.
+fails until the manifest allows the new content. The agreed procedure uses two PRs.
+First land a manifest-only PR, because the manifest itself is not pinned. Add the new hash next to the old one, so other open PRs still pass.
+Then land the PR that edits the pinned file.
 
 The ported smoke job is a browser reachability check. It opens a public page headless and saves a snapshot.
 It does not run the player or the scenario matrix, so it does not prove that the extension saves a track.
