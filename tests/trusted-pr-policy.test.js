@@ -7,8 +7,7 @@ const sha = 'a'.repeat(40);
 const policy = {
   files: { '.github/workflows/ci.yml': [digest('approved workflow')], 'scripts/validator.sh': [digest('approved validator')] },
   scripts: [{ test: 'node --test tests/*.test.js' }, { test: 'node --test tests/*.test.js', lint: 'eslint .' }],
-  checks: [{ context: 'ci', app: 15368, path: '.github/workflows/ci.yml' },
-    { context: 'cubic · AI code reviewer', app: 1082092 }],
+  checks: [{ context: 'ci', app: 15368, path: '.github/workflows/ci.yml' }],
 };
 function digest(text) { return createHash('sha256').update(text).digest('hex'); }
 function snapshot() {
@@ -21,7 +20,6 @@ function snapshot() {
       'package.json': JSON.stringify({ scripts: policy.scripts[0] }) },
     checks: [
       { id: 2, name: 'ci', app: { id: 15368 }, head_sha: sha, status: 'completed', conclusion: 'success', check_suite: { id: 10 } },
-      { id: 3, name: 'cubic · AI code reviewer', app: { id: 1082092 }, head_sha: sha, status: 'completed', conclusion: 'success' },
     ],
     runs: [{ id: 1, check_suite_id: 10, head_sha: sha, path: '.github/workflows/ci.yml', event: 'pull_request',
       repository: { full_name: 'komaksym/music-saver' }, pull_requests: [{ number: 1 }], status: 'completed', conclusion: 'success' }],

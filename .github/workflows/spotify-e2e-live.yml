@@ -1,0 +1,62 @@
+name: spotify-e2e-live
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  spotify-e2e-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: spotify-e2e-dedicated-account
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build tested extension
+        run: npm run build
+      - name: Install browser harness
+        run: npx --no-install agent-browser install --with-deps
+      - name: Restore dedicated Spotify authentication
+        env:
+          COOKIES_B64: ${{ secrets.SPOTIFY_E2E_COOKIES_B64 }}
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: |
+          node --input-type=module <<'JS'
+          import { writeFileSync } from 'node:fs';
+          if (!process.env.COOKIES_B64) throw Error('Missing dedicated Spotify cookie secret. Live E2E cannot skip authentication.');
+          const cookies = JSON.parse(Buffer.from(process.env.COOKIES_B64, 'base64').toString('utf8'));
+          if (!Array.isArray(cookies) || !cookies.some(c => c.name === 'sp_dc' && c.value)) throw Error('Dedicated Spotify session is missing.');
+          if (cookies.some(c => !/(^|\.)spotify\.com$/.test(c.domain || ''))) throw Error('Only Spotify cookies are accepted.');
+          writeFileSync(`${process.env.RUNNER_TEMP_DIR}/spotify-cookies.json`, JSON.stringify(cookies), { mode: 0o600 });
+          JS
+      - name: Test actual Spotify song and persistent session
+        env:
+          SPOTIFY_E2E_PROFILE: ${{ runner.temp }}/spotify-profile
+          SPOTIFY_E2E_COOKIE_FILE: ${{ runner.temp }}/spotify-cookies.json
+          SPOTIFY_E2E_TRACK_ID: ${{ vars.SPOTIFY_E2E_TRACK_ID || '7LoBfKLpz4BGrxCuOzAKRz' }}
+        run: PATH="$PWD/node_modules/.bin:$PATH" xvfb-run --auto-servernum node scripts/spotify-e2e.mjs live
+      - name: Upload sanitized live browser proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: spotify-e2e-live-${{ github.run_id }}-${{ github.run_attempt }}
+          path: e2e-artifacts/live/
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Remove ephemeral authentication
+        if: always()
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: rm -rf "$RUNNER_TEMP_DIR/spotify-profile" "$RUNNER_TEMP_DIR/spotify-cookies.json"

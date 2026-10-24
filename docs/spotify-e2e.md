@@ -86,16 +86,17 @@ Do not run the suite while another browser owns the same profile.
 
 ## GitHub checks
 
-`.github/workflows/spotify-e2e.yml` runs the fixture job on pushes, pull requests,
-and manual dispatches, plus a nightly schedule. Its stable job names are
-`spotify-e2e-fixture` and `spotify-e2e-live`. The live job runs only on the
-nightly schedule and on an explicit dispatch, so unreviewed code never uses the
-dedicated account. It also uses repository-wide concurrency for that account and
-never cancels an active run to start another one.
+`.github/workflows/spotify-e2e.yml` runs the fixture job on pull requests, `main`
+pushes, and manual dispatches. `.github/workflows/spotify-e2e-live.yml` runs the
+live job only on the nightly schedule and on an explicit dispatch, so unreviewed
+code never uses the dedicated account. The live workflow uses repository-wide
+concurrency for that account and never cancels an active run to start another one.
 
-Require both job names through the default branch ruleset. Retain the existing checks.
-Check the workflow at the pull request head before a merge. A passing fixture job is
-not evidence that live authentication or playback worked.
+Require `spotify-e2e-fixture` through the default branch ruleset. Retain the existing
+checks. Do not require `spotify-e2e-live`: GitHub treats a skipped job as passing, so
+a ruleset check could look green without running a live test. Review scheduled and
+manual live results instead. A passing fixture job is not evidence that live
+authentication or playback worked.
 
 Artifacts contain results and screenshots only. Live screenshots hide everything
 except the song widget and extension toast. Cookie files, browser profiles, snapshots,
@@ -107,15 +108,15 @@ its ephemeral profile and cookie file even after a failure.
 Install the pinned harness and browser, then run the fixture suite.
 
 ```sh
-npm install --global agent-browser@0.38.2
-agent-browser install --with-deps
+npm ci
+npx --no-install agent-browser install --with-deps
 npm run verify
-xvfb-run --auto-servernum node scripts/spotify-e2e.mjs fixture
+PATH="$PWD/node_modules/.bin:$PATH" xvfb-run --auto-servernum node scripts/spotify-e2e.mjs fixture
 ```
 
 For live playback, supply `SPOTIFY_E2E_PROFILE` and `SPOTIFY_E2E_TRACK_ID` through your
 environment. Supply `SPOTIFY_E2E_COOKIE_FILE` only when you need to seed a new profile.
-Run `xvfb-run --auto-servernum node scripts/spotify-e2e.mjs live`. The browser runs
+Run `PATH="$PWD/node_modules/.bin:$PATH" xvfb-run --auto-servernum node scripts/spotify-e2e.mjs live`. The browser runs
 inside the virtual display. It does not take the operator's foreground window.
 
 Older uncommitted `e2e-matrix.sh` and `e2e-nightly.yml` files are not this implementation.

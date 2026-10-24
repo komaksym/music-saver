@@ -113,8 +113,10 @@ export async function boot(env) {
           state.settings = normalizeSettings(changes.settings.newValue);
           state.tracker = new EligibilityTracker(state.settings);
         }
-        if (changes["activity-log"]) state.log.adopt(changes["activity-log"].newValue);
-        if (changes["retry-queue"]) state.queue.adopt(changes["retry-queue"].newValue);
+        const activity = changes["activity-log"];
+        if (activity) state.log.adopt(Object.hasOwn(activity, "newValue") ? activity.newValue : []);
+        const queue = changes["retry-queue"];
+        if (queue) state.queue.adopt(Object.hasOwn(queue, "newValue") ? queue.newValue : []);
       });
     }
   } catch (e) {

@@ -52,13 +52,10 @@ The verifier checks these rules:
 The body headings are `Summary`, `Validation`, `Risks / Notes`, `Breaking changes`, and `Visual summary`.
 The nine supporting contexts are `ci`, `pr-title`, `ready`, `pr-hygiene`, `commit-lint`,
 `actionlint`, `trufflehog`, `zizmor`, and `smoke`.
-Cubic is not required. The Cubic trial quota ran out, so the owner removed `cubic-gate` and
-`cubic · AI code reviewer` from ruleset `25511836` and from the policy. Both still run and report, but they block nothing.
-
 ## Re-evaluation
 
 The `ready` rollup can report after the policy does.
-The policy therefore re-runs when `pr-ready` or `cubic-gate` completes, so an early failure clears without a PR edit.
+The policy therefore re-runs when `pr-ready` completes, so an early failure clears without a PR edit.
 GitHub starts a `workflow_run` workflow only when its file exists on the default branch, so this re-run starts after the merge
 ([workflow_run](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)).
 

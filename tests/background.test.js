@@ -14,7 +14,14 @@ function stubChrome() {
     runtime: { onMessage: { addListener: (fn) => { listener = fn; } } },
     send: (msg) => new Promise((resolve) => listener(msg, {}, resolve)),
     // Another context (the options page or the browser harness) writes storage.
-    externalWrite: (changes) => { Object.assign(data, { ...changes }); onChanged(changes); },
+    externalWrite: (changes) => {
+      for (const [key, change] of Object.entries(changes)) {
+        if (Object.hasOwn(change, "newValue")) data[key] = change.newValue;
+        else delete data[key];
+      }
+      onChanged(changes);
+    },
+    read: (key) => data[key],
   };
 }
 
@@ -65,6 +72,18 @@ test("an external clear is adopted, so a later event cannot republish cleared en
   await boot({ chrome });
   await chrome.send({ type: "ms-event", event: saveEvent("n1", "track-a") });
   chrome.externalWrite({ "activity-log": { oldValue: [{ ts: 1000, kind: "save", trackId: "track-a", detail: "" }], newValue: [] } });
+  assert.deepEqual(chrome.read("activity-log"), []);
+  await chrome.send({ type: "ms-event", event: saveEvent("n2", "track-b") });
+  const read = await chrome.send({ type: "ms-read", limit: 10, nowMs: 2000 });
+  assert.deepEqual(read.recent.map((e) => e.trackId), ["track-b"]);
+});
+
+test("removing durable activity storage clears in-memory entries", async () => {
+  const chrome = stubChrome();
+  await boot({ chrome });
+  await chrome.send({ type: "ms-event", event: saveEvent("n1", "track-a") });
+  chrome.externalWrite({ "activity-log": { oldValue: chrome.read("activity-log") } });
+  assert.equal(chrome.read("activity-log"), undefined);
   await chrome.send({ type: "ms-event", event: saveEvent("n2", "track-b") });
   const read = await chrome.send({ type: "ms-read", limit: 10, nowMs: 2000 });
   assert.deepEqual(read.recent.map((e) => e.trackId), ["track-b"]);
@@ -75,6 +94,16 @@ test("an external queue clear is adopted, so a stale retry cannot reappear", asy
   await boot({ chrome });
   await chrome.send({ type: "ms-event", event: { ...saveEvent("n-fail", "track-b"), kind: "fail", detail: "save:dom-changed" } });
   chrome.externalWrite({ "retry-queue": { oldValue: [], newValue: [] } });
+  await chrome.send({ type: "ms-event", event: saveEvent("n-ok", "track-c") });
+  assert.deepEqual((await chrome.send({ type: "ms-read", limit: 10, nowMs: 2000 })).pending, []);
+});
+
+test("removing durable queue storage clears in-memory retries", async () => {
+  const chrome = stubChrome();
+  await boot({ chrome });
+  await chrome.send({ type: "ms-event", event: { ...saveEvent("n-fail", "track-b"), kind: "fail", detail: "save:dom-changed" } });
+  chrome.externalWrite({ "retry-queue": { oldValue: chrome.read("retry-queue") } });
+  assert.equal(chrome.read("retry-queue"), undefined);
   await chrome.send({ type: "ms-event", event: saveEvent("n-ok", "track-c") });
   assert.deepEqual((await chrome.send({ type: "ms-read", limit: 10, nowMs: 2000 })).pending, []);
 });
