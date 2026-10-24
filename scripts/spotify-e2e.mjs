@@ -260,6 +260,21 @@ try {
         window.__msE2EUndo = { created: false, visible: false };
         new MutationObserver(records => {
           const button = document.querySelector('[data-testid="music-saver-undo"]');
+          const toast = document.querySelector('[data-testid="music-saver-toast"]');
+          if (toast && button) {
+            const rootStyle = getComputedStyle(toast);
+            const buttonStyle = getComputedStyle(button);
+            const rect = toast.getBoundingClientRect();
+            const buttonRect = button.getBoundingClientRect();
+            window.__msE2EUndo.layout = {
+              rootDisplay: rootStyle.display, rootVisibility: rootStyle.visibility,
+              buttonDisplay: buttonStyle.display, buttonVisibility: buttonStyle.visibility,
+              width: rect.width, height: rect.height, x: rect.x, y: rect.y,
+              buttonWidth: buttonRect.width, buttonHeight: buttonRect.height,
+              inlineStyle: toast.getAttribute('style'), parent: toast.parentElement?.tagName,
+              privacyMaskPresent: !!document.querySelector('#ms-e2e-privacy')
+            };
+          }
           if (records.some(record => [...record.addedNodes].some(node => node.nodeType === 1 && (node.matches('[data-testid="music-saver-toast"]') || node.querySelector('[data-testid="music-saver-toast"]'))))) window.__msE2EUndo.created = true;
           if (button?.getClientRects().length && getComputedStyle(button).visibility !== 'hidden') window.__msE2EUndo.visible = true;
         }).observe(document.body, { childList: true, subtree: true });
