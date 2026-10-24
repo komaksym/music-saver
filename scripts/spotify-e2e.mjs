@@ -121,7 +121,18 @@ try {
       importCookies(JSON.parse(readFileSync(resolve(process.env.SPOTIFY_E2E_COOKIE_FILE), 'utf8')), ab);
     }
     open('https://open.spotify.com/');
-    ab('wait', '--fn', "!!document.querySelector('[data-testid=\"user-widget-link\"], [data-testid=\"user-widget-avatar\"]') && !document.querySelector('[data-testid=\"login-button\"]')");
+    try {
+      ab('wait', '--fn', "!!document.querySelector('[data-testid=\"user-widget-link\"], [data-testid=\"user-widget-avatar\"]') && !document.querySelector('[data-testid=\"login-button\"]')");
+    } catch {
+      const status = evaluate(`({
+        loginButton: !!document.querySelector('[data-testid="login-button"]'),
+        userWidget: !!document.querySelector('[data-testid="user-widget-link"], [data-testid="user-widget-avatar"]'),
+        trackPage: !!document.querySelector('[data-testid="play-button"]'),
+        spotifyPage: location.hostname === 'open.spotify.com',
+        accessDenied: /access denied|blocked|unusual traffic|captcha/i.test(document.body.innerText)
+      })`);
+      throw new Error('Spotify login check timed out: ' + JSON.stringify(status));
+    }
     const originalSettings = storage("chrome.storage.local.get('settings').then(x=>x.settings||null)");
     const url = `https://open.spotify.com/track/${track}`;
     configure({ enabled: false, thresholdRatio: 0.9, minSoundedMs: 60000 });
