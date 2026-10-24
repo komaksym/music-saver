@@ -192,7 +192,7 @@ try {
 } catch (error) {
   results.push({ status: 'failed', error: error.message });
   process.exitCode = 1;
-  try { screenshot('failure'); } catch {}
+  try { screenshot('failure'); } catch { /* A failed screenshot must not hide the original error. */ }
   console.error(error.message);
 } finally {
   try { if (restore) await restore(); } catch(error) { cleanupError = error.message; process.exitCode = 1; }

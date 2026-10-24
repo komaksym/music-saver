@@ -25,9 +25,10 @@ Chromium extension that auto-saves Spotify tracks you listen through while you w
 ## Browser E2E
 
 The browser tests use agent-browser and load the unpacked extension on Linux with
-Xvfb. `npm run e2e:fixture` tests a controlled player matrix. `npm run e2e:live`
-tests actual Spotify playback with a dedicated authenticated profile. Fixture
-results do not prove live Spotify playback.
+Xvfb. `node scripts/spotify-e2e.mjs fixture` tests a controlled player matrix.
+`node scripts/spotify-e2e.mjs live` tests actual Spotify playback with a
+dedicated authenticated profile. Fixture results do not prove live Spotify
+playback.
 
 See [Spotify E2E checks](docs/spotify-e2e.md) for coverage, authentication,
 artifacts, and the GitHub check names. Missing or expired authentication fails

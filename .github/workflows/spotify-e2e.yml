@@ -26,10 +26,10 @@ jobs:
       - name: Install browser harness
         run: npm install --global agent-browser@0.38.2 && agent-browser install --with-deps
       - name: Run extension matrix in virtual display
-        run: xvfb-run --auto-servernum npm run e2e:fixture
+        run: xvfb-run --auto-servernum node scripts/spotify-e2e.mjs fixture
       - name: Upload deterministic browser proof
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e92692289057a4a6c8fb05b610d7c
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: spotify-e2e-fixture-${{ github.run_id }}-${{ github.run_attempt }}
           path: e2e-artifacts/fixture/
@@ -37,6 +37,10 @@ jobs:
           retention-days: 7
 
   spotify-e2e-live:
+    # Account-backed playback never runs from a pull request head or a branch
+    # push. It runs on the nightly schedule and on an explicit dispatch, so
+    # unreviewed code cannot use the dedicated Spotify session.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
@@ -71,10 +75,10 @@ jobs:
           SPOTIFY_E2E_PROFILE: ${{ runner.temp }}/spotify-profile
           SPOTIFY_E2E_COOKIE_FILE: ${{ runner.temp }}/spotify-cookies.json
           SPOTIFY_E2E_TRACK_ID: ${{ vars.SPOTIFY_E2E_TRACK_ID || '7LoBfKLpz4BGrxCuOzAKRz' }}
-        run: xvfb-run --auto-servernum npm run e2e:live
+        run: xvfb-run --auto-servernum node scripts/spotify-e2e.mjs live
       - name: Upload sanitized live browser proof
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e92692289057a4a6c8fb05b610d7c
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: spotify-e2e-live-${{ github.run_id }}-${{ github.run_attempt }}
           path: e2e-artifacts/live/

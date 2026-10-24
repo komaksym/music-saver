@@ -6,8 +6,9 @@ No test calls `WatchLoop.tick()` or inserts the bundle into the page.
 
 ## Coverage
 
-`npm run e2e:fixture` runs 16 controlled browser scenarios on Linux with Xvfb.
-The matrix crosses initial liked state, ratio reached, and minimum sounded time reached.
+`node scripts/spotify-e2e.mjs fixture` runs 16 controlled browser scenarios on Linux
+with Xvfb. The matrix crosses initial liked state, ratio reached, and minimum sounded
+time reached.
 Only a song that meets both limits can produce a save or an already-liked skip.
 Additional scenarios cover pause, seek, advertisements, ad interruption, disabled settings,
 Undo, one save per song, and failed saves entering the retry queue.
@@ -20,7 +21,8 @@ extension key. The content script, background worker, and libraries remain uncha
 The fixture advances its progress against real elapsed time. It does not mock the
 extension clock or replace eligibility logic.
 
-`npm run e2e:live` runs the real extension against a Spotify song. It crosses liked
+`node scripts/spotify-e2e.mjs live` runs the real extension against a Spotify song. It
+crosses liked
 and unliked states with reached and unreached settings. It verifies real progress,
 Liked Songs state, the background log, and an empty retry queue. The reached case uses
 a six-second floor and a one-percent ratio to bound CI time. It does not verify the
@@ -62,10 +64,12 @@ Do not run the suite while another browser owns the same profile.
 
 ## GitHub checks
 
-`.github/workflows/spotify-e2e.yml` runs on pushes, pull requests, manual dispatches,
-and a nightly schedule. Its stable job names are `spotify-e2e-fixture` and
-`spotify-e2e-live`. The live job uses repository-wide concurrency for its dedicated
-account. It never cancels an active run to start another one.
+`.github/workflows/spotify-e2e.yml` runs the fixture job on pushes, pull requests,
+and manual dispatches, plus a nightly schedule. Its stable job names are
+`spotify-e2e-fixture` and `spotify-e2e-live`. The live job runs only on the
+nightly schedule and on an explicit dispatch, so unreviewed code never uses the
+dedicated account. It also uses repository-wide concurrency for that account and
+never cancels an active run to start another one.
 
 Require both job names through the default branch ruleset. Retain the existing checks.
 Check the workflow at the pull request head before a merge. A passing fixture job is
@@ -84,13 +88,13 @@ Install the pinned harness and browser, then run the fixture suite.
 npm install --global agent-browser@0.38.2
 agent-browser install --with-deps
 npm run verify
-xvfb-run --auto-servernum npm run e2e:fixture
+xvfb-run --auto-servernum node scripts/spotify-e2e.mjs fixture
 ```
 
 For live playback, supply `SPOTIFY_E2E_PROFILE` and `SPOTIFY_E2E_TRACK_ID` through your
 environment. Supply `SPOTIFY_E2E_COOKIE_FILE` only when you need to seed a new profile.
-Run `xvfb-run --auto-servernum npm run e2e:live`. The browser runs inside the virtual
-display. It does not take the operator's foreground window.
+Run `xvfb-run --auto-servernum node scripts/spotify-e2e.mjs live`. The browser runs
+inside the virtual display. It does not take the operator's foreground window.
 
 Older uncommitted `e2e-matrix.sh` and `e2e-nightly.yml` files are not this implementation.
 They validate placeholder records rather than execute the scenarios described here.
