@@ -249,9 +249,11 @@ try {
         else wait(reached ? 15000 : 4000);
         const endPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
         assert(endPosition >= startPosition + (reached ? 6000 : 1000), `live song really progressed: ${startPosition} -> ${endPosition}`);
-        const after = await liked(null);
+        const after = undo
+          ? evaluate(`document.querySelector(${JSON.stringify(likeButton)})?.getAttribute('aria-checked')==='true'`)
+          : await liked(null);
         const name = `${startLiked ? 'liked' : 'unliked'}-${reached ? 'reached' : 'below'}`;
-        screenshot(name);
+        if (!undo) screenshot(name);
         let afterUndo;
         if (undo) {
           ab('click', '[data-testid="music-saver-undo"]');
