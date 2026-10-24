@@ -6,17 +6,18 @@ import { matrix, scenarios, liveScenarios, liveScenariosFor, assertLiveTrack } f
 import { WatchLoop, shouldBoot } from '../extension/content.js';
 import { SoundedTimeSampler } from '../extension/lib/player-dom.js';
 
-const fixtureWorkflow = readFileSync(new URL('../.github/workflows/spotify-e2e-fixture.yml', import.meta.url), 'utf8');
+const prWorkflow = readFileSync(new URL('../.github/workflows/pr.yml', import.meta.url), 'utf8');
+const e2eJob = prWorkflow.slice(prWorkflow.indexOf('  e2e:'), prWorkflow.indexOf('  gate:'));
 const liveWorkflow = readFileSync(new URL('../.github/workflows/spotify-e2e.yml', import.meta.url), 'utf8');
 
-test('pull request checks run only the fixture workflow', () => {
-  assert.match(fixtureWorkflow, /^  pull_request:$/m);
+test('pull request checks run only the fixture e2e job', () => {
+  assert.match(prWorkflow, /^  pull_request:$/m);
   assert.doesNotMatch(liveWorkflow, /^  pull_request:/m);
-  assert.doesNotMatch(fixtureWorkflow, /^  spotify-e2e-live:/m);
+  assert.doesNotMatch(prWorkflow, /^  spotify-e2e-live:/m);
 });
 
 test('browser workflows install the locked harness without a global package install', () => {
-  for (const workflow of [fixtureWorkflow, liveWorkflow]) {
+  for (const workflow of [e2eJob, liveWorkflow]) {
     assert.match(workflow, /^        run: npm ci$/m);
     assert.match(workflow, /^        run: npx --no-install agent-browser install --with-deps$/m);
     assert.doesNotMatch(workflow, /npm install --global|npm install -g/);
