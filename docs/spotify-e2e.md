@@ -18,14 +18,17 @@ The scenario table in `tests/e2e/scenarios.mjs` is data. Each record names its
 track IDs, the Like-control counters (`opens`, `saves`), and the retry-queue length.
 The runner interprets the steps and writes one assertion record per check. Negative
 cases assert that the Like control received no click at all. `retry-recovery` fails
-one save, then proves the next scheduled retry saves the same track, offers Undo,
-records the save after the durable log accepts it, and clears the queue. `track-change` saves two different tracks, so it proves each track has its own
+one save, then proves the next scheduled retry logs the outcome before it clears the
+queue, offers Undo for a real save, and records a skip when the track is already saved. `track-change` saves two different tracks, so it proves each track has its own
 sounded-time budget, liked state, and identity. Screenshots and `results.json` record every result. The result includes the
 tested bundle's SHA-256 and the pinned harness version.
 
-The settings check drives the real options page. It sets the three controls through
-browser input, reads the stored settings, and asserts that the activity log and retry
-queue render.
+The settings check drives the real options page: it types the three controls, blurs each
+one so the page's change handler runs, and reads the stored settings. Every player
+scenario also opens the options page and asserts that its own records reach the rendered
+activity log and retry queue, filtered by that scenario's track IDs. The background owns
+those stores once it has loaded them, so no scenario resets them behind its back; unique
+track IDs keep the records apart.
 
 The fixture is not Spotify. The test manifest adds localhost permission and a temporary
 extension key. The content script, background worker, and libraries remain unchanged.
@@ -44,11 +47,15 @@ measured progress. It does not verify the default 60-second floor through live
 playback. The fixture covers independent ratio and floor limits with its own matrix.
 Existing eligibility unit tests cover the default settings.
 
-A live failure records a sanitized blocker: `authentication`, `playback-unsupported`,
-`playback-not-started`, `selector-mismatch`, or `browser-state-unreadable`. The record
-holds booleans about the page, never page text or session data. Do not relax the
-progress or song-identity assertions to make a constrained runner pass. A Free account
-or a DRM-blocked Linux browser is a real blocker, not a pass.
+Before any playback, the runner waits for the Spotify landing page to settle and names
+the state when the seeded session is not usable: `login-form`, `consent-wall`,
+`auth-challenge`, or `no-account-widget`, with the hostname and path. A live failure
+records a sanitized blocker: `authentication`, `consent-wall`, `auth-challenge`,
+`playback-unsupported`, `playback-not-started`, `selector-mismatch`, or
+`browser-state-unreadable`. The record holds booleans about the page plus the hostname
+and path, never page text or session data. Do not relax the progress or song-identity
+assertions to make a constrained runner pass. A Free account or a DRM-blocked Linux
+browser is a real blocker, not a pass.
 
 The live runner restores the original liked state and extension settings on exit, and it
 does so after a failure too. A cleanup failure fails the check. A terminated runner cannot guarantee cleanup.

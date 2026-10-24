@@ -95,7 +95,10 @@ function storage(code) {
   catch { throw new Error('The unpacked extension options page did not load: the extension is not active in this browser session.'); }
   return evaluate(code);
 }
-function configure(settings) { storage(`chrome.storage.local.set({settings:${JSON.stringify(settings)},'activity-log':[],'retry-queue':[]})`); }
+// The background owns the activity log and retry queue in memory once it has
+// loaded them, so a scenario never resets those stores behind its back. Each
+// scenario uses unique track IDs and filters its own records instead.
+function configure(settings) { storage(`chrome.storage.local.set({settings:${JSON.stringify(settings)}})`); }
 function events() { return storage("chrome.storage.local.get(['activity-log','retry-queue']).then(x=>({recent:x['activity-log']||[],pending:x['retry-queue']||[]}))"); }
 
 function pollUntil(read, accept, label, timeoutMs = 15000) {
@@ -151,8 +154,17 @@ function act(step) {
   throw new Error(`unknown step ${step.act}`);
 }
 
+function renderedLists() {
+  return evaluate(`(() => ({
+    log: Array.from(document.querySelectorAll('#activity-log li')).map((li) => [li.querySelector('.kind') ? li.querySelector('.kind').textContent : '', li.textContent || '']),
+    queue: Array.from(document.querySelectorAll('#retry-queue li')).map((li) => li.textContent || ''),
+    placeholder: document.body.textContent.includes('Unavailable outside the installed extension'),
+  }))()`);
+}
+
 function fixtureCase(scenario, port) {
   const trackId = scenario.id.replace(/-/g, '');
+  const ids = [trackId, ...(scenario.tracks || [])];
   const fail = scenario.fail && scenario.fail !== 'none' ? `&fail=${scenario.fail}` : '';
   configure(scenario.settings);
   open(`http://127.0.0.1:${port}/?id=${trackId}&liked=${scenario.liked}${fail}`);
@@ -161,14 +173,22 @@ function fixtureCase(scenario, port) {
   const state = evaluate('fixture.state()');
   const shot = relative(root, screenshot(scenario.id));
   const observed = events();
+  const mine = observed.recent.filter((event) => ids.includes(event.trackId));
+  const pending = observed.pending.filter((item) => ids.includes(item.id));
   const assertions = [];
-  check(assertions, 'activity-log', scenario.expected, observed.recent.map((event) => event.kind));
-  if (scenario.tracks) check(assertions, 'track-ids', scenario.tracks, observed.recent.map((event) => event.trackId));
+  check(assertions, 'activity-log', scenario.expected, mine.map((event) => event.kind));
+  if (scenario.tracks) check(assertions, 'track-ids', scenario.tracks, mine.map((event) => event.trackId));
   check(assertions, 'liked-state', finalLiked(scenario.liked, scenario.expected), state.liked);
   const control = {};
   for (const key of Object.keys(scenario.expect)) control[key] = key === 'opens' ? state.opens : state.saves;
   check(assertions, 'like-control', scenario.expect, control);
-  check(assertions, 'retry-queue', scenario.retry ?? 0, observed.pending.length);
+  check(assertions, 'retry-queue', scenario.retry ?? 0, pending.length);
+  // The options page reads through the background, so this proves the same
+  // records reach the user-visible lists.
+  const rendered = pollUntil(renderedLists, (lists) => !lists.placeholder, `${scenario.id}: options page rendered`);
+  check(assertions, 'activity-log-render', scenario.expected, rendered.log.filter(([, text]) => ids.some((id) => text.includes(id))).map(([kind]) => kind));
+  const renderedQueue = rendered.queue.filter((text) => ids.some((id) => text.includes(id)));
+  check(assertions, 'retry-queue-render', (scenario.retry ?? 0) > 0, renderedQueue.length > 0 && renderedQueue.every((text) => text.includes('Retry now')));
   assertions.push({ check: 'screenshot', path: shot, ok: true });
   return { id: scenario.id, mode: scenario.mode, status: 'passed', assertions };
 }
@@ -205,21 +225,6 @@ function settingsCase() {
   );
   assertions.push({ check: 'settings-controls', expected: ['50', '2', false], observed: controls, ok: true });
   check(assertions, 'settings-form', expectedSettings, stored);
-  storage(`chrome.storage.local.set({'activity-log':[{ts:Date.now(),kind:'save',trackId:'settingscase',detail:''}],'retry-queue':[{id:'settingscase',uri:'spotify:track:settingscase',kind:'save',attempts:0,nextDueMs:0,seq:0}]})`);
-  open(options);
-  ab('wait', '#enabled');
-  const log = String(pollUntil(
-    () => String(evaluate("document.querySelector('#activity-log').textContent")),
-    (text) => text.includes('settingscase'),
-    'activity log rendered',
-  ));
-  const queue = String(pollUntil(
-    () => String(evaluate("document.querySelector('#retry-queue').textContent")),
-    (text) => text.includes('settingscase'),
-    'retry queue rendered',
-  ));
-  check(assertions, 'activity-log-render', true, log.includes('save') && log.includes('settingscase'));
-  check(assertions, 'retry-queue-render', true, queue.includes('Retry now') && queue.includes('settingscase'));
   const shot = relative(root, screenshot('settings'));
   assertions.push({ check: 'screenshot', path: shot, ok: true });
   return { id: 'settings', mode: 'settings', status: 'passed', assertions };
@@ -300,29 +305,45 @@ function seedCookies(file) {
   return { total: cookies.length, accepted, rejected, spDc: sp, batch: batch.reason };
 }
 
-// Booleans and fixed enums only. Never page text, titles, cookies, or profile data.
+function pageState() {
+  return evaluate(`(() => {
+    const has = (selector) => !!document.querySelector(selector);
+    return {
+      hostname: location.hostname,
+      path: location.pathname,
+      loginButton: has('[data-testid="login-button"]'),
+      userWidget: has('[data-testid="user-widget-link"]') || has('[data-testid="user-widget-avatar"]') || has('[data-testid="user-widget"]'),
+      consent: has('#onetrust-banner-sdk') || has('[data-testid="cookie-banner"]') || has('[data-testid="consent-banner"]'),
+      challenge: has('iframe[src*="captcha"]') || has('[data-testid*="challenge"]'),
+      playButton: has('[data-testid="play-button"]'),
+      nowPlaying: has('[data-testid="now-playing-widget"]'),
+      progressBar: has('[data-testid="playback-progressbar"]'),
+      errorIndicator: has('[role="alert"]') || has('[data-testid="error-message"]'),
+    };
+  })()`);
+}
+
+function trackState(track) {
+  return evaluate(`(() => {
+    const play = document.querySelector('[data-testid="control-button-playpause"]');
+    const anchor = document.querySelector('[data-testid="now-playing-widget"] a[href*="track"], a[data-testid="context-link"][data-context-item-type="track"]');
+    const href = anchor ? String(anchor.getAttribute('href') || '') : '';
+    const text = String(document.body ? document.body.innerText : '').toLowerCase();
+    return {
+      playPauseReadable: !!play,
+      playing: !!play && play.getAttribute('aria-label') === 'Pause',
+      trackInNowPlaying: href.includes(${JSON.stringify(track)}),
+      progressReadable: Number.isFinite(Number(document.querySelector('[data-testid="playback-progressbar"] input')?.value)),
+      premiumOrUnavailable: ['premium', "can't play", 'not available', 'upgrade'].some((phrase) => text.includes(phrase)),
+    };
+  })()`);
+}
+
+// Booleans, fixed enums, and the page path only. Never page text, titles,
+// cookies, or profile data.
 function liveDiagnostics(track, step) {
   try {
-    return {
-      step,
-      ...evaluate(`(() => {
-        const has = (selector) => !!document.querySelector(selector);
-        const play = document.querySelector('[data-testid="control-button-playpause"]');
-        const anchor = document.querySelector('[data-testid="now-playing-widget"] a[href*="track"], a[data-testid="context-link"][data-context-item-type="track"]');
-        const href = anchor ? String(anchor.getAttribute('href') || '') : '';
-        const text = String(document.body ? document.body.innerText : '').toLowerCase();
-        return {
-          authenticated: !has('[data-testid="login-button"]') && (has('[data-testid="user-widget-link"]') || has('[data-testid="user-widget-avatar"]')),
-          playButton: has('[data-testid="play-button"]'),
-          playPauseReadable: !!play,
-          playing: !!play && play.getAttribute('aria-label') === 'Pause',
-          trackInNowPlaying: href.includes(${JSON.stringify(track)}),
-          progressReadable: Number.isFinite(Number(document.querySelector('[data-testid="playback-progressbar"] input')?.value)),
-          premiumOrUnavailable: ['premium', "can't play", 'not available', 'upgrade'].some((phrase) => text.includes(phrase)),
-          page: location.pathname.startsWith('/track/') ? 'track' : location.pathname === '/' ? 'home' : 'other',
-        };
-      })()`),
-    };
+    return { step, ...pageState(), ...trackState(track) };
   } catch {
     return { step, diagnostics: 'unreadable' };
   }
@@ -330,7 +351,9 @@ function liveDiagnostics(track, step) {
 
 function liveBlocker(d) {
   if (!d || d.diagnostics === 'unreadable') return 'browser-state-unreadable';
-  if (!d.authenticated) return 'authentication';
+  if (d.challenge) return 'auth-challenge';
+  if (d.consent) return 'consent-wall';
+  if (d.loginButton || !d.userWidget) return 'authentication';
   if (d.premiumOrUnavailable) return 'playback-unsupported';
   if (!d.playButton) return 'selector-mismatch';
   if (!d.playPauseReadable) return 'selector-mismatch';
@@ -343,8 +366,14 @@ async function runFixture(results) {
   const server = await startFixtureServer();
   try {
     open('about:blank');
-    results.push(settingsCase());
-    console.log('PASS fixture settings');
+    try {
+      results.push(settingsCase());
+      console.log('PASS fixture settings');
+    } catch (error) {
+      results.push({ id: 'settings', mode: 'settings', status: 'failed', error: error.message });
+      process.exitCode = 1;
+      console.error(`FAIL fixture settings: ${error.message}`);
+    }
     for (const scenario of scenarios) {
       try {
         results.push(fixtureCase(scenario, server.port));
@@ -373,127 +402,137 @@ async function runLive(results) {
     results.push({ id: 'cookie-seed', mode: 'live', status: 'passed', assertions: [{ check: 'cookie-import', expected: 'sp_dc accepted', observed: outcome, ok: true }] });
     console.log(`PASS live cookie-seed ${outcome.accepted}/${outcome.total} accepted, sp_dc ${outcome.spDc.expiry}, batch ${outcome.batch}`);
   }
-  open('https://open.spotify.com/');
-  step.selector = 'user-widget';
-  ab('wait', '--fn', "!!document.querySelector('[data-testid=\"user-widget-link\"], [data-testid=\"user-widget-avatar\"]') && !document.querySelector('[data-testid=\"login-button\"]')");
-  const originalSettings = storage("chrome.storage.local.get('settings').then(x=>x.settings||null)");
-  const url = `https://open.spotify.com/track/${track}`;
-  configure({ enabled: false, thresholdRatio: 0.9, minSoundedMs: 60000 });
-  open(url);
-  ab('wait', '[data-testid="play-button"]');
-  ab('click', '[data-testid="play-button"]');
-  ab('wait', '--fn', `!!document.querySelector('[data-testid="now-playing-widget"] a[href*="${track}"]') && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label')==='Pause'`);
-
-  const likeButton = '[data-testid="now-playing-widget"] button[aria-checked]';
-  async function liked(next) {
-    return evaluate(`(async()=>{
-      const b=document.querySelector(${JSON.stringify(likeButton)});
-      if(!b) throw Error('no song Like control');
-      if(b.getAttribute('aria-checked')==='false') {
-        if(${JSON.stringify(next)}===true) {b.click();await new Promise(r=>setTimeout(r,500));return document.querySelector(${JSON.stringify(likeButton)}).getAttribute('aria-checked')==='true';}
-        return false;
-      }
-      b.click();
-      let menu,box;
-      for(let i=0;i<30;i++) {
-        menu=document.querySelector('[data-testid="context-menu"]');
-        box=menu?.querySelector('[aria-labelledby="listrow-title-spotify:collection:tracks"]')?.closest('button[role="menuitemcheckbox"]');
-        if(box)break;
-        await new Promise(r=>setTimeout(r,100));
-      }
-      if(!box) throw Error('no Liked Songs row');
-      const before=box.getAttribute('aria-checked')==='true';
-      if(${JSON.stringify(next)}!==null && before!==${JSON.stringify(next)}) {
-        box.click();menu.querySelector('button[type="submit"]').click();
-        await new Promise(r=>setTimeout(r,500));
-        return ${JSON.stringify(next)};
-      }
-      const cancel=[...menu.querySelectorAll('button')].find(x=>x.textContent.trim()==='Cancel');
-      if(!cancel)throw Error('no Cancel');cancel.click();return before;
-    })()`);
-  }
-
-  step.phase = 'precondition';
-  step.selector = 'now-playing-like-control';
-  const initialLiked = await liked(null);
-  let restore = async () => {
+  let restore = null;
+  try {
+    step.selector = 'account-widget';
+    open('https://open.spotify.com/');
+    const page = pollUntil(
+      pageState,
+      (state) => state.userWidget || state.loginButton || state.consent || state.challenge || state.nowPlaying,
+      'Spotify landing page settled',
+    );
+    if (!page.userWidget && !(page.nowPlaying && !page.loginButton && !page.consent)) {
+      throw new Error(`Spotify session is not usable (${page.challenge ? 'auth-challenge' : page.consent ? 'consent-wall' : page.loginButton ? 'login-form' : 'no-account-widget'} at ${page.hostname}${page.path})`);
+    }
+    const originalSettings = storage("chrome.storage.local.get('settings').then(x=>x.settings||null)");
+    const url = `https://open.spotify.com/track/${track}`;
     configure({ enabled: false, thresholdRatio: 0.9, minSoundedMs: 60000 });
     open(url);
-    ab('wait', likeButton);
-    await liked(initialLiked);
-    assert.equal(await liked(null), initialLiked, 'original liked state restored');
-    storage(originalSettings === null ? "chrome.storage.local.remove('settings')" : `chrome.storage.local.set({settings:${JSON.stringify(originalSettings)}})`);
-  };
-  try {
-    const settingsAssertions = [];
-    check(settingsAssertions, 'settings-round-trip', { enabled: false, thresholdRatio: 0.9, minSoundedMs: 60000 }, storage("chrome.storage.local.get('settings').then(x=>x.settings)"));
-    results.push({ id: 'settings', mode: 'settings', status: 'passed', assertions: settingsAssertions });
-    console.log('PASS live settings');
-
-    step.phase = 'playback';
-    step.selector = 'playback-progressbar';
-    open(url);
     ab('wait', '[data-testid="play-button"]');
-    const durationMs = pollUntil(
-      () => evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.max)"),
-      (value) => Number.isFinite(value) && value > 0,
-      'live song duration readable from the progress control',
-    );
-    // The ratio gates must separate inside the measured listen window, so the
-    // suite proves each gate instead of assuming the seed song makes it true.
-    assert(durationMs * 0.01 <= 6000, `song duration ${durationMs}ms cannot prove the reached ratio gate with 15s of playback; choose a seed song of 24s to 600s`);
-    assert(durationMs * 0.95 > 22000, `song duration ${durationMs}ms cannot prove the unreached ratio gate with 15s of playback; choose a seed song of 24s to 600s`);
-    results.push({ id: 'song-duration', mode: 'live', status: 'passed', durationMs, assertions: [{ check: 'duration-ms', expected: '>0 and 16s..600s', observed: durationMs, ok: true }] });
-    console.log(`PASS live song duration ${durationMs}ms`);
+    ab('click', '[data-testid="play-button"]');
+    ab('wait', '--fn', `!!document.querySelector('[data-testid="now-playing-widget"] a[href*="${track}"]') && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label')==='Pause'`);
 
-    for (const startLiked of [false, true]) {
-      for (const ratioReached of [false, true]) {
-        for (const floorReached of [false, true]) {
-          const name = `${startLiked ? 'liked' : 'unliked'}-ratio-${ratioReached}-floor-${floorReached}`;
-          step.phase = 'precondition';
-          step.scenario = name;
-          step.selector = 'now-playing-like-control';
-          configure({ enabled: false, thresholdRatio: 0.01, minSoundedMs: 60000 });
-          open(url);
-          ab('wait', likeButton);
-          await liked(startLiked);
-          assert.equal(await liked(null), startLiked, `${name}: live precondition`);
-          // A fresh content-script document prevents sounded credit leaking across cases.
-          step.phase = 'playback';
-          step.selector = 'now-playing-progress';
-          configure({ enabled: true, thresholdRatio: ratioReached ? 0.01 : 0.95, minSoundedMs: floorReached ? 6000 : 3600000 });
-          open(url);
-          ab('wait', '[data-testid="play-button"]');
-          const paused = evaluate("document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')!=='Pause'");
-          if (paused) ab('click', '[data-testid="play-button"]');
-          ab('wait', '--fn', `!!document.querySelector('[data-testid="now-playing-widget"] a[href*="${track}"]') && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label')==='Pause'`);
-          const startPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
-          assert(Number.isFinite(startPosition), `${name}: live progress control readable`);
-          wait(15000);
-          step.phase = 'assertion';
-          step.selector = 'liked-state';
-          const endPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
-          const progressMs = endPosition - startPosition;
-          const thresholdMs = Math.max(durationMs * (ratioReached ? 0.01 : 0.95), floorReached ? 6000 : 3600000);
-          const eligible = ratioReached && floorReached;
-          const expected = eligible ? (startLiked ? 'skip' : 'save') : null;
-          const after = await liked(null);
-          const shot = relative(root, screenshot(name));
-          const observed = events();
-          const assertions = [];
-          check(assertions, 'measured-progress', true, progressMs > 0);
-          check(assertions, 'ratio-gate', ratioReached, progressMs >= durationMs * 0.01);
-          check(assertions, 'floor-gate', floorReached, progressMs >= 6000);
-          check(assertions, 'gate-threshold', eligible, progressMs >= thresholdMs);
-          check(assertions, 'liked-state', startLiked || eligible, after);
-          check(assertions, 'activity-log', expected ? [expected] : [], observed.recent.map((event) => event.kind));
-          check(assertions, 'retry-queue', 0, observed.pending.length);
-          assertions.push({ check: 'screenshot', path: shot, ok: true });
-          results.push({ id: name, mode: 'live', status: 'passed', startLiked, ratioReached, floorReached, durationMs, thresholdMs, progressMs, assertions });
-          console.log(`PASS live ${name} progress=${progressMs}ms threshold=${Math.round(thresholdMs)}ms`);
+    const likeButton = '[data-testid="now-playing-widget"] button[aria-checked]';
+    async function liked(next) {
+      return evaluate(`(async()=>{
+        const b=document.querySelector(${JSON.stringify(likeButton)});
+        if(!b) throw Error('no song Like control');
+        if(b.getAttribute('aria-checked')==='false') {
+          if(${JSON.stringify(next)}===true) {b.click();await new Promise(r=>setTimeout(r,500));return document.querySelector(${JSON.stringify(likeButton)}).getAttribute('aria-checked')==='true';}
+          return false;
+        }
+        b.click();
+        let menu,box;
+        for(let i=0;i<30;i++) {
+          menu=document.querySelector('[data-testid="context-menu"]');
+          box=menu?.querySelector('[aria-labelledby="listrow-title-spotify:collection:tracks"]')?.closest('button[role="menuitemcheckbox"]');
+          if(box)break;
+          await new Promise(r=>setTimeout(r,100));
+        }
+        if(!box) throw Error('no Liked Songs row');
+        const before=box.getAttribute('aria-checked')==='true';
+        if(${JSON.stringify(next)}!==null && before!==${JSON.stringify(next)}) {
+          box.click();menu.querySelector('button[type="submit"]').click();
+          await new Promise(r=>setTimeout(r,500));
+          return ${JSON.stringify(next)};
+        }
+        const cancel=[...menu.querySelectorAll('button')].find(x=>x.textContent.trim()==='Cancel');
+        if(!cancel)throw Error('no Cancel');cancel.click();return before;
+      })()`);
+    }
+
+    step.phase = 'precondition';
+    step.selector = 'now-playing-like-control';
+    step.phase = 'precondition';
+    step.selector = 'now-playing-like-control';
+    const initialLiked = await liked(null);
+    restore = async () => {
+      configure({ enabled: false, thresholdRatio: 0.9, minSoundedMs: 60000 });
+      open(url);
+      ab('wait', likeButton);
+      await liked(initialLiked);
+      assert.equal(await liked(null), initialLiked, 'original liked state restored');
+      storage(originalSettings === null ? "chrome.storage.local.remove('settings')" : `chrome.storage.local.set({settings:${JSON.stringify(originalSettings)}})`);
+    };
+      const settingsAssertions = [];
+      check(settingsAssertions, 'settings-round-trip', { enabled: false, thresholdRatio: 0.9, minSoundedMs: 60000 }, storage("chrome.storage.local.get('settings').then(x=>x.settings)"));
+      results.push({ id: 'settings', mode: 'settings', status: 'passed', assertions: settingsAssertions });
+      console.log('PASS live settings');
+
+      step.phase = 'playback';
+      step.selector = 'playback-progressbar';
+      open(url);
+      ab('wait', '[data-testid="play-button"]');
+      const durationMs = pollUntil(
+        () => evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.max)"),
+        (value) => Number.isFinite(value) && value > 0,
+        'live song duration readable from the progress control',
+      );
+      // The ratio gates must separate inside the measured listen window, so the
+      // suite proves each gate instead of assuming the seed song makes it true.
+      assert(durationMs * 0.01 <= 6000, `song duration ${durationMs}ms cannot prove the reached ratio gate with 15s of playback; choose a seed song of 24s to 600s`);
+      assert(durationMs * 0.95 > 22000, `song duration ${durationMs}ms cannot prove the unreached ratio gate with 15s of playback; choose a seed song of 24s to 600s`);
+      results.push({ id: 'song-duration', mode: 'live', status: 'passed', durationMs, assertions: [{ check: 'duration-ms', expected: '>0 and 16s..600s', observed: durationMs, ok: true }] });
+      console.log(`PASS live song duration ${durationMs}ms`);
+
+      for (const startLiked of [false, true]) {
+        for (const ratioReached of [false, true]) {
+          for (const floorReached of [false, true]) {
+            const name = `${startLiked ? 'liked' : 'unliked'}-ratio-${ratioReached}-floor-${floorReached}`;
+            step.phase = 'precondition';
+            step.scenario = name;
+            step.selector = 'now-playing-like-control';
+            configure({ enabled: false, thresholdRatio: 0.01, minSoundedMs: 60000 });
+            open(url);
+            ab('wait', likeButton);
+            await liked(startLiked);
+            assert.equal(await liked(null), startLiked, `${name}: live precondition`);
+            // A fresh content-script document prevents sounded credit leaking across cases.
+            step.phase = 'playback';
+            step.selector = 'now-playing-progress';
+            configure({ enabled: true, thresholdRatio: ratioReached ? 0.01 : 0.95, minSoundedMs: floorReached ? 6000 : 3600000 });
+            open(url);
+            ab('wait', '[data-testid="play-button"]');
+            const paused = evaluate("document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')!=='Pause'");
+            if (paused) ab('click', '[data-testid="play-button"]');
+            ab('wait', '--fn', `!!document.querySelector('[data-testid="now-playing-widget"] a[href*="${track}"]') && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label')==='Pause'`);
+            const startPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
+            assert(Number.isFinite(startPosition), `${name}: live progress control readable`);
+            wait(15000);
+            step.phase = 'assertion';
+            step.selector = 'liked-state';
+            const endPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
+            const progressMs = endPosition - startPosition;
+            const thresholdMs = Math.max(durationMs * (ratioReached ? 0.01 : 0.95), floorReached ? 6000 : 3600000);
+            const eligible = ratioReached && floorReached;
+            const expected = eligible ? (startLiked ? 'skip' : 'save') : null;
+            const after = await liked(null);
+            const shot = relative(root, screenshot(name));
+            const observed = events();
+            const assertions = [];
+            check(assertions, 'measured-progress', true, progressMs > 0);
+            check(assertions, 'ratio-gate', ratioReached, progressMs >= durationMs * 0.01);
+            check(assertions, 'floor-gate', floorReached, progressMs >= 6000);
+            check(assertions, 'gate-threshold', eligible, progressMs >= thresholdMs);
+            check(assertions, 'liked-state', startLiked || eligible, after);
+            check(assertions, 'activity-log', expected ? [expected] : [], observed.recent.map((event) => event.kind));
+            check(assertions, 'retry-queue', 0, observed.pending.length);
+            assertions.push({ check: 'screenshot', path: shot, ok: true });
+            results.push({ id: name, mode: 'live', status: 'passed', startLiked, ratioReached, floorReached, durationMs, thresholdMs, progressMs, assertions });
+            console.log(`PASS live ${name} progress=${progressMs}ms threshold=${Math.round(thresholdMs)}ms`);
+          }
         }
       }
-    }
   } catch (error) {
     const diagnostics = liveDiagnostics(track, { ...step });
     const blocker = liveBlocker(diagnostics);
@@ -502,8 +541,10 @@ async function runLive(results) {
     console.error(`live blocker: ${blocker} at ${step.phase}${step.scenario ? ` (${step.scenario})` : ''} selector ${step.selector}`);
     throw error;
   } finally {
-    try { await restore(); }
-    catch (error) { cleanupError ||= `account restore failed: ${error.message}`; process.exitCode = 1; }
+    if (restore) {
+      try { await restore(); }
+      catch (error) { cleanupError ||= `account restore failed: ${error.message}`; process.exitCode = 1; }
+    }
   }
 }
 
