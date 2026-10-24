@@ -55,3 +55,8 @@ test('the policy does not wait on Cubic, which main no longer requires', () => {
   const cubic = policy.checks.filter(check => /cubic/i.test(check.context)).map(check => check.context);
   assert.deepEqual(cubic, [], 'no Cubic context in policy.checks');
 });
+
+test('the policy does not pin removed Cubic gate files', () => {
+  const cubic = Object.keys(policy.files).filter(path => /cubic/i.test(path));
+  assert.deepEqual(cubic, [], 'no Cubic file is pinned');
+});
