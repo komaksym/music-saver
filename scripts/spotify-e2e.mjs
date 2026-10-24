@@ -140,11 +140,12 @@ try {
     phase = 'extension settings';
     const originalSettings = storage("chrome.storage.local.get('settings').then(x=>x.settings||null)");
     const url = `https://open.spotify.com/track/${track}`;
+    const playButton = '[data-testid="action-bar-row"] [data-testid="play-button"]';
     configure({ enabled: false, thresholdRatio: 0.9, minSoundedMs: 60000 });
     phase = 'Spotify track play button';
     open(url);
-    ab('wait', '[data-testid="play-button"]');
-    ab('click', '[data-testid="play-button"]');
+    ab('wait', playButton);
+    ab('click', playButton);
     phase = 'Spotify playback start';
     ab('wait', '--fn', `!!document.querySelector('[data-testid="now-playing-widget"] a[href*="${track}"]') && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label')==='Pause'`);
     const likeButton = '[data-testid="now-playing-widget"] button[aria-checked]';
@@ -192,9 +193,9 @@ try {
         assert.equal(await liked(null), startLiked, 'live precondition');
         // A fresh content-script document prevents sounded credit leaking across cases.
         configure({ enabled: true, thresholdRatio: reached ? 0.01 : 1, minSoundedMs: reached ? 6000 : 3600000 });
-        open(url); ab('wait', '[data-testid="play-button"]');
+        open(url); ab('wait', playButton);
         const paused = evaluate("document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')!=='Pause'");
-        if(paused) ab('click', '[data-testid="play-button"]');
+        if(paused) ab('click', playButton);
         ab('wait', '--fn', `!!document.querySelector('[data-testid="now-playing-widget"] a[href*="${track}"]') && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label')==='Pause'`);
         const startPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
         assert(Number.isFinite(startPosition), 'live progress control readable');
