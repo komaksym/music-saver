@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readPlayback } from "../extension/lib/player-dom.js";
-import { matrix, scenarios, assertLiveTrack } from './e2e/scenarios.mjs';
+import { matrix, scenarios, liveScenarios, assertLiveTrack } from './e2e/scenarios.mjs';
 import { WatchLoop, shouldBoot } from '../extension/content.js';
 import { SoundedTimeSampler } from '../extension/lib/player-dom.js';
 
@@ -20,6 +20,16 @@ test('browser matrix covers every liked, ratio, and floor combination', () => {
   assert.equal(new Set(scenarios.map(s => s.id)).size, scenarios.length);
   assert.equal(matrix.filter(s => s.expected === 'save').length, 1);
   assert.equal(matrix.filter(s => s.expected === 'skip').length, 1);
+});
+
+test('live matrix covers the four session states and one direct Undo case', () => {
+  assert.deepEqual(liveScenarios, [
+    { id: 'unliked-below', startLiked: false, reached: false, undo: false },
+    { id: 'unliked-reached', startLiked: false, reached: true, undo: false },
+    { id: 'liked-below', startLiked: true, reached: false, undo: false },
+    { id: 'liked-reached', startLiked: true, reached: true, undo: false },
+    { id: 'undo', startLiked: false, reached: true, undo: true },
+  ]);
 });
 
 test('live songs require explicit Spotify track identities', () => {

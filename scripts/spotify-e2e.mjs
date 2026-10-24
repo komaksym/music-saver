@@ -6,7 +6,7 @@ import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } f
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { scenarios, assertLiveTrack } from '../tests/e2e/scenarios.mjs';
+import { scenarios, liveScenarios, assertLiveTrack } from '../tests/e2e/scenarios.mjs';
 import { importCookies } from './spotify-e2e-cookies.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -50,7 +50,7 @@ function ab(...args) {
 }
 function evaluate(code) { return ab('eval', code).result; }
 function wait(ms) { ab('wait', String(ms)); }
-function open(url) { ab('open', url); }
+function open(url) { ab('tab', 'player'); ab('open', url); }
 function screenshot(name) {
   if (mode === 'live') evaluate(`(() => {
     const style=document.createElement('style');
@@ -61,8 +61,15 @@ function screenshot(name) {
   try { ab('screenshot', resolve(artifacts, `${name}.png`)); }
   finally { if (mode === 'live') evaluate("document.querySelector('#ms-e2e-privacy')?.remove()"); }
 }
-function storage(code) { open(options); ab('wait', '#enabled'); return evaluate(code); }
-function configure(settings) { storage(`chrome.storage.local.set({settings:${JSON.stringify(settings)},'activity-log':[],'retry-queue':[]})`); }
+function storage(code) {
+  ab('tab', 'options');
+  try { ab('wait', '#enabled'); return evaluate(code); }
+  finally { ab('tab', 'player'); }
+}
+function configure(settings) {
+  const stored = storage(`chrome.storage.local.set({settings:${JSON.stringify(settings)},'activity-log':[],'retry-queue':[]}).then(()=>chrome.storage.local.get('settings')).then(x=>x.settings)`);
+  assert.deepEqual(stored, settings, 'scenario settings persisted');
+}
 function events() { return storage("chrome.storage.local.get(['activity-log','retry-queue']).then(x=>({recent:x['activity-log']||[],pending:x['retry-queue']||[]}))"); }
 const results = [];
 let server;
@@ -70,7 +77,10 @@ let restore;
 let initialLiked;
 let cleanupError;
 try {
-  open('about:blank');
+  ab('open', 'about:blank');
+  ab('tab', 'new', '--label', 'player', 'about:blank');
+  ab('tab', 'new', '--label', 'options', options);
+  ab('tab', 'player');
   if (mode === 'fixture') {
     const html = readFileSync(resolve(root, 'tests/e2e/player.html'));
     server = createServer((_req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end(html); });
@@ -161,9 +171,22 @@ try {
     })`);
     assert(requestedSong.title && requestedSong.artist, 'requested track page identifies its title and artist');
     const playingRequestedSong = `document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]')?.textContent.trim() === ${JSON.stringify(requestedSong.title)} && document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"]')?.textContent.trim() === ${JSON.stringify(requestedSong.artist)} && document.querySelector('[data-testid="control-button-playpause"]')?.getAttribute('aria-label') === 'Pause'`;
+    const progressingRequestedSong = `(() => {
+      const position = Number(document.querySelector('[data-testid="playback-progressbar"] input')?.value);
+      const previous = window.__msE2EProgress;
+      window.__msE2EProgress = position;
+      return (${playingRequestedSong}) && Number.isFinite(previous) && position > previous;
+    })()`;
+    function pausePlayer() {
+      if (evaluate("document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')==='Pause'")) {
+        ab('click', '[data-testid="control-button-playpause"]');
+        ab('wait', '--fn', "document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')==='Play'");
+      }
+    }
+    evaluate('window.__msE2EProgress = null');
     ab('click', playButton);
     phase = 'Spotify playback start';
-    ab('wait', '--fn', playingRequestedSong);
+    ab('wait', '--fn', progressingRequestedSong);
     const likeButton = '[data-testid="now-playing-widget"] button[aria-checked]';
     async function liked(next) {
       return evaluate(`(async()=>{
@@ -206,6 +229,7 @@ try {
     initialLiked = await liked(null);
     restore = async () => {
       phase = 'restore original state';
+      pausePlayer();
       storage("chrome.storage.local.set({settings:{enabled:false,thresholdRatio:0.9,minSoundedMs:60000}})");
       try {
         open(url);
@@ -217,60 +241,69 @@ try {
         screenshot('restored');
       } finally { restoreSettings(); }
     };
-    for (const startLiked of [false, true]) {
-      for (const reached of [false, true]) {
-        phase = `${startLiked ? 'liked' : 'unliked'}-${reached ? 'reached' : 'below'}`;
-        const undo = reached && !startLiked;
-        configure({ enabled: false, thresholdRatio: 0.01, minSoundedMs: 60000 });
-        open(url); ab('wait', likeButton);
-        await liked(startLiked);
-        assert.equal(await liked(null), startLiked, 'live precondition');
-        // A fresh content-script document prevents sounded credit leaking across cases.
-        configure({ enabled: true, thresholdRatio: reached ? 0.01 : 1, minSoundedMs: reached ? 6000 : 3600000 });
-        open(url); ab('wait', playButton);
-        const paused = evaluate("document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')!=='Pause'");
-        if (!paused) {
-          ab('click', '[data-testid="control-button-playpause"]');
-          ab('wait', '--fn', "document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')==='Play'");
-        }
-        if (undo) evaluate(`(() => {
-          window.__msE2EUndo = { created: false, visible: false };
-          new MutationObserver(records => {
-            const button = document.querySelector('[data-testid="music-saver-undo"]');
-            if (records.some(record => [...record.addedNodes].some(node => node.nodeType === 1 && (node.matches('[data-testid="music-saver-toast"]') || node.querySelector('[data-testid="music-saver-toast"]'))))) window.__msE2EUndo.created = true;
-            if (button?.getClientRects().length && getComputedStyle(button).visibility !== 'hidden') window.__msE2EUndo.visible = true;
-          }).observe(document.body, { childList: true, subtree: true });
-        })()`);
-        ab('click', playButton);
-        ab('wait', '--fn', playingRequestedSong);
-        const startPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
-        assert(Number.isFinite(startPosition), 'live progress control readable');
-        if (undo) ab('wait', '--fn', "!!document.querySelector('[data-testid=\"music-saver-undo\"]')");
-        else wait(reached ? 15000 : 4000);
-        const endPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
-        assert(endPosition >= startPosition + (reached ? 6000 : 1000), `live song really progressed: ${startPosition} -> ${endPosition}`);
-        const after = undo
-          ? evaluate(`document.querySelector(${JSON.stringify(likeButton)})?.getAttribute('aria-checked')==='true'`)
-          : await liked(null);
-        const name = `${startLiked ? 'liked' : 'unliked'}-${reached ? 'reached' : 'below'}`;
-        if (!undo) screenshot(name);
-        let afterUndo;
-        if (undo) {
-          ab('click', '[data-testid="music-saver-undo"]');
-          wait(1500);
-          afterUndo = await liked(null);
-          assert.equal(afterUndo, false, 'live Undo removes the saved song');
-          screenshot('undo');
-        }
-        const observed = events();
-        const expected = reached ? (startLiked ? 'skip' : 'save') : null;
-        assert.equal(after, startLiked || reached, `${name}: live liked state`);
-        assert.deepEqual(observed.recent.map(e=>e.kind), undo ? ['save', 'undo'] : expected ? [expected] : [], `${name}: extension activity`);
-        assert.equal(observed.pending.length, 0, `${name}: no failed actions`);
-        results.push({ id: name, status: 'passed', startLiked, after, expected, progressMs: endPosition-startPosition });
-        if (undo) results.push({ id: 'undo', status: 'passed', after: afterUndo });
-        console.log(`PASS live ${name}`);
+    evaluate(`window.__msE2EDocument = ${JSON.stringify(session)}`);
+    function assertSamePlayer() {
+      assert.equal(evaluate('window.__msE2EDocument'), session, 'options access preserves the Spotify document');
+    }
+    for (const { id: name, startLiked, reached, undo } of liveScenarios) {
+      phase = name;
+      pausePlayer();
+      configure({ enabled: false, thresholdRatio: 0.01, minSoundedMs: 60000 });
+      assertSamePlayer();
+      ab('wait', likeButton);
+      await liked(startLiked);
+      assert.equal(await liked(null), startLiked, 'live precondition');
+      configure({ enabled: true, thresholdRatio: reached ? 0.01 : 1, minSoundedMs: reached ? 6000 : 3600000 });
+      assertSamePlayer();
+      ab('wait', playButton);
+      if (undo) evaluate(`(() => {
+        window.__msE2EUndo = { created: false, visible: false };
+        new MutationObserver(records => {
+          const button = document.querySelector('[data-testid="music-saver-undo"]');
+          if (records.some(record => [...record.addedNodes].some(node => node.nodeType === 1 && (node.matches('[data-testid="music-saver-toast"]') || node.querySelector('[data-testid="music-saver-toast"]'))))) window.__msE2EUndo.created = true;
+          if (button?.getClientRects().length && getComputedStyle(button).visibility !== 'hidden') window.__msE2EUndo.visible = true;
+        }).observe(document.body, { childList: true, subtree: true });
+      })()`);
+      const startPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
+      assert(Number.isFinite(startPosition), 'live progress control readable');
+      evaluate('window.__msE2EProgress = null');
+      const startedAt = Date.now();
+      ab('click', playButton);
+      ab('wait', '--fn', progressingRequestedSong);
+      let savedBeforeUndo;
+      if (undo) {
+        ab('wait', '--fn', "(() => { const button=document.querySelector('[data-testid=\"music-saver-undo\"]'); return !!button?.getClientRects().length && getComputedStyle(button).visibility !== 'hidden'; })()");
+        savedBeforeUndo = evaluate(`document.querySelector(${JSON.stringify(likeButton)})?.getAttribute('aria-checked')==='true'`);
+        ab('click', '[data-testid="music-saver-undo"]');
+        wait(1500);
+        assert.equal(savedBeforeUndo, true, `${name}: live save before Undo`);
+      } else {
+        wait(reached ? 15000 : 4000);
       }
+      const endPosition = evaluate("Number(document.querySelector('[data-testid=\"playback-progressbar\"] input')?.value)");
+      assert(endPosition >= startPosition + (reached ? 6000 : 1000), `live song really progressed: ${startPosition} -> ${endPosition}`);
+      const afterUndo = undo ? await liked(null) : undefined;
+      const after = undo ? afterUndo : await liked(null);
+      if (undo) assert.equal(afterUndo, false, 'live Undo removes the saved song');
+      screenshot(name);
+      pausePlayer();
+      const observed = events();
+      assertSamePlayer();
+      const expected = reached ? (startLiked ? 'skip' : 'save') : null;
+      if (!undo) assert.equal(after, startLiked || reached, `${name}: live liked state`);
+      assert.deepEqual(observed.recent.filter(event=>event.ts>=startedAt).map(e=>e.kind), undo ? ['save', 'undo'] : expected ? [expected] : [], `${name}: extension activity`);
+      assert.equal(observed.pending.length, 0, `${name}: no failed actions`);
+      results.push({
+        id: name,
+        status: 'passed',
+        startLiked,
+        after,
+        expected,
+        progressMs: endPosition-startPosition,
+        documentPreserved: true,
+        ...(undo ? { savedBeforeUndo } : {}),
+      });
+      console.log(`PASS live ${name}`);
     }
   }
 } catch (error) {

@@ -14,6 +14,14 @@ export const scenarios = [...matrix, ...[
   settings: { thresholdRatio: 0.5, minSoundedMs: 1000, enabled: mode !== 'disabled' },
 }))];
 
+export const liveScenarios = [
+  { id: 'unliked-below', startLiked: false, reached: false, undo: false },
+  { id: 'unliked-reached', startLiked: false, reached: true, undo: false },
+  { id: 'liked-below', startLiked: true, reached: false, undo: false },
+  { id: 'liked-reached', startLiked: true, reached: true, undo: false },
+  { id: 'undo', startLiked: false, reached: true, undo: true },
+];
+
 export function assertLiveTrack(value) {
   if (!/^[A-Za-z0-9]{22}$/.test(value || '')) throw new Error('SPOTIFY_E2E_TRACK_ID must name a 22-character Spotify song ID');
   return value;

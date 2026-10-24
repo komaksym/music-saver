@@ -107,8 +107,13 @@ from authenticated Spotify playback. Missing live proof remains UNVERIFIED.
 4. Run lint, tests, build, and the isolated Linux browser jobs on the final head.
    Inspect screenshots and preserve results. Report authentication or playback
    failures without treating fixture results as live proof.
-5. Cover the live Undo toast after a real save. Verify the save and undo log entries,
-   read restored settings back, and capture the restored song state.
+5. Keep four plain-save state combinations and one separate live Undo case.
+   Verify save and undo log entries, read restored settings back, and capture
+   the restored song state.
+6. Keep Spotify and extension options in separate tabs. Test the failed reload
+   premise with a persistent document marker, actual advancing playback, and
+   the same five live assertions. Use the production settings listener to reset
+   the tracker while playback is paused.
 
 ### Throughput checkpoint
 
