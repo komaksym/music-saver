@@ -384,13 +384,14 @@ try {
       if (undo) assert.equal(afterUndo, false, 'live Undo removes the saved song');
       pausePlayer();
       if (decisionRecording) {
-        ab('tab', 'options');
         ab('open', options);
         ab('wait', '--fn', `document.querySelector('#activity-log')?.innerText.includes(${JSON.stringify(expected)})`);
         wait(2500);
         ab('record', 'stop');
         recordingStarted = false;
-        ab('tab', 'player');
+        open(url);
+        ab('wait', playButton);
+        evaluate(`window.__msE2EDocument = ${JSON.stringify(session)}`);
       }
       screenshot(name);
       const observed = events();
