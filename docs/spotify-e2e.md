@@ -15,6 +15,8 @@ Undo, one save per song, and failed saves entering the retry queue.
 Every case checks the player state and the background activity log. Negative cases
 also assert that the Like control received no clicks. Screenshots and `results.json`
 record each result. The result includes the tested bundle's SHA-256.
+The fixture also models host CSS that hides unrecognized body children. Undo must
+remain visible and clickable under that rule.
 
 The fixture is not Spotify. The test manifest adds localhost permission and a temporary
 extension key. The content script, background worker, and libraries remain unchanged.

@@ -114,6 +114,10 @@ from authenticated Spotify playback. Missing live proof remains UNVERIFIED.
    premise with a persistent document marker, actual advancing playback, and
    the same five live assertions. Use the production settings listener to reset
    the tracker while playback is paused.
+7. Reproduce Spotify hiding the injected toast with a body-child CSS rule.
+   The browser regression at 080fc24 passes thirteen cases before failing on Undo.
+   Fix the toast's owned display style, regenerate the bundle, and verify the
+   controlled regression plus the live Undo flow. Track the defect in issue #27.
 
 ### Throughput checkpoint
 

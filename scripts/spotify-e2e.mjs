@@ -289,6 +289,7 @@ try {
       if (undo) {
         ab('wait', '--fn', "(() => { const button=document.querySelector('[data-testid=\"music-saver-undo\"]'); return !!button?.getClientRects().length && getComputedStyle(button).visibility !== 'hidden'; })()");
         savedBeforeUndo = evaluate(`document.querySelector(${JSON.stringify(likeButton)})?.getAttribute('aria-checked')==='true'`);
+        screenshot('undo-toast');
         ab('click', '[data-testid="music-saver-undo"]');
         wait(1500);
         assert.equal(savedBeforeUndo, true, `${name}: live save before Undo`);
