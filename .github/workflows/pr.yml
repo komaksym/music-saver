@@ -1,18 +1,29 @@
-name: spotify-e2e-fixture
+name: pr
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
-  pull_request:
-  workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  spotify-e2e-fixture:
+  checks:
+    uses: komaksym/pr-gate/.github/workflows/checks.yml@d9054a367abf36081d50f80ce39a16b336a87f53 # v1.0.0
+    permissions:
+      contents: read
+      pull-requests: read
+
+  e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -22,8 +33,6 @@ jobs:
           node-version: '22'
       - name: Install locked dependencies
         run: npm ci
-      - name: Verify extension
-        run: npm run verify
       - name: Install browser harness
         run: npx --no-install agent-browser install --with-deps
       - name: Run extension matrix in virtual display
@@ -36,3 +45,14 @@ jobs:
           path: e2e-artifacts/fixture/
           if-no-files-found: error
           retention-days: 7
+
+  gate:
+    if: always()
+    needs: [checks, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - run: echo gate passed

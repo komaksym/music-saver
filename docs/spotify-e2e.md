@@ -86,14 +86,14 @@ Do not run the suite while another browser owns the same profile.
 
 ## GitHub checks
 
-`.github/workflows/spotify-e2e-fixture.yml` runs the fixture job on pull requests, `main`
-pushes, and manual dispatches. `.github/workflows/spotify-e2e.yml` runs the
-live job only on the nightly schedule and on an explicit dispatch, so unreviewed
-code never uses the dedicated account. The live workflow uses repository-wide
-concurrency for that account and never cancels an active run to start another one.
+The `e2e` job in `.github/workflows/pr.yml` runs the fixture on pull requests and
+`main` pushes. `.github/workflows/spotify-e2e.yml` runs the live job only on the
+nightly schedule and on an explicit dispatch, so unreviewed code never uses the
+dedicated account. The live workflow uses repository-wide concurrency for that
+account and never cancels an active run to start another one.
 
-Require `spotify-e2e-fixture` through the default branch ruleset. Retain the existing
-checks. Do not require `spotify-e2e-live`: GitHub treats a skipped job as passing, so
+Require `gate` through the default branch ruleset. That gate includes this fixture
+job. Do not require `spotify-e2e-live`: GitHub treats a skipped job as passing, so
 a ruleset check could look green without running a live test. Review scheduled and
 manual live results instead. A passing fixture job is not evidence that live
 authentication or playback worked.
