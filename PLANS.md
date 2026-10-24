@@ -119,6 +119,11 @@ from authenticated Spotify playback. Missing live proof remains UNVERIFIED.
    Fix the toast's owned display style, regenerate the bundle, and verify the
    controlled regression plus the live Undo flow. Track the defect in issue #27.
 
+Verification: run 40120502206 passed all 16 fixture cases and all five live cases.
+The live job passed on attempt 2 after attempt 1 failed before playback started.
+Cleanup restored the initial liked state and settings. The exact bundle SHA is
+recorded in both result files and in the E2E guide.
+
 ### Throughput checkpoint
 
 - Blocking first steps. Recover the PR head and reproduce the live failure before edits.

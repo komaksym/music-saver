@@ -47,6 +47,17 @@ Live tests cannot force Spotify to serve an advertisement. Ad cases use explicit
 visible fixture markers, including a stale song widget during an ad. Unknown future
 Spotify ad markup is not covered. The browser suite is not an exhaustive Spotify UI model.
 
+## Verified browser evidence
+
+Run [40120502206](https://github.com/komaksym/music-saver/actions/runs/40120502206)
+tested bundle `033dff77608f083f430230c4f47dd3cb219276718b0a0b69b445f484ba14a164`.
+Its fixture job passed all 16 cases. Live attempt 1 failed before playback began;
+attempt 2 passed all five cases and restored the original liked state and settings.
+The runner preserves failed attempts instead of masking playback failures with retries.
+
+The [live Undo screenshot](evidence/spotify-undo.png) shows the real toast before
+the click. Account content outside the designated song widget and toast is hidden.
+
 ## Authentication
 
 An existing dedicated profile is available in the original workstation checkout at
