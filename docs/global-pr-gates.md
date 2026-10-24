@@ -28,10 +28,11 @@ An unresolved review thread blocks the merge.
 Reviewer bots are never required checks.
 A bot can be absent, renamed, or slow, and a required bot check would then block every merge.
 Unresolved review threads already stop a bad change.
+The bot order and fallback rule is in [REVIEW.md](https://github.com/komaksym/pr-gate/blob/main/REVIEW.md).
 
 ## Cutover
 
 1. Merge PR #20.
-2. Run `komaksym/pr-gate apply-ruleset.sh komaksym/music-saver`.
+2. From a `komaksym/pr-gate` checkout, run `./apply-ruleset.sh komaksym/music-saver`.
 3. Disable ruleset 25511836.
 4. Merge this pull request.
