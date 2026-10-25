@@ -1,0 +1,9 @@
+{
+  "skill": "baoyu-infographic",
+  "backend": "codex-imagegen",
+  "image_sha256": "956b1bd67267a52672ea0ec737eba50ef4c1656c44fd0a911130029f97c62985",
+  "prompt_sha256": "4e5191b0bc2ebab49cd96e93da41fc187aaff0a55873a472150ed910f8470fa0",
+  "purpose": "PR 51 shows the guarded Like transaction: identity checks before and after the click, and a fail-closed branch when the track changes.",
+  "visual_note": "Viewed the final PNG. Read 'A save lands on the track that earned it', 'Eligible track A', 'Check identity', 'Like click', 'Verify identity', 'Save event', 'Track changed at any step', 'Fail closed', 'No click on B. No save event.', '145 tests', and '100% changed-line coverage'.",
+  "created_at": "2026-10-25T15:54:17.900Z"
+}

@@ -35,6 +35,7 @@ function node(attrs, text) {
 function fakeDoc(opts) {
   const o = opts || {};
   const state = {
+    trackId: o.trackId || "abc123",
     checked: o.checked || "false",
     likedBox: o.likedBox || "false",
     menuOpen: false,
@@ -44,9 +45,13 @@ function fakeDoc(opts) {
     doneClicked: false,
     cancelClicked: false,
     ad: false,
+    clickLog: [],
+    onMainClick: null,
   };
   const mainBtn = node({ "aria-checked": state.checked });
   mainBtn.click = () => {
+    state.clickLog.push({ control: "like", trackId: state.trackId });
+    if (state.onMainClick) state.onMainClick();
     if (state.checked === "false") {
       state.checked = "true";
       state.likedBox = "true";
@@ -57,6 +62,7 @@ function fakeDoc(opts) {
   };
   const box = node({ "aria-checked": state.likedBox });
   box.click = () => {
+    state.clickLog.push({ control: "liked-row", trackId: state.trackId });
     state.likedBox = state.likedBox === "true" ? "false" : "true";
     box.attrs["aria-checked"] = state.likedBox;
   };
@@ -65,6 +71,7 @@ function fakeDoc(opts) {
   labeled.closest = (sel) => (String(sel).includes("menuitemcheckbox") ? box : null);
   const done = node({ type: "submit" }, "Done");
   done.click = () => {
+    state.clickLog.push({ control: "done", trackId: state.trackId });
     state.doneClicked = true;
     state.menuOpen = false;
     state.checked = state.likedBox;
@@ -97,7 +104,10 @@ function fakeDoc(opts) {
       return null;
     },
   };
-  const anchor = node({ href: "https://open.spotify.com/track/abc?uri=spotify:track:abc123" });
+  const anchor = node();
+  anchor.getAttribute = (name) => (name === "href" && state.trackId
+    ? `https://open.spotify.com/track/${state.trackId}?uri=spotify:track:${state.trackId}`
+    : null);
   const playBtn = node({ "aria-label": "Pause" });
   const range = {
     get value() {
@@ -196,6 +206,129 @@ test("a full listen saves the track, toasts, and Undo reverses it", async () => 
   assert.deepEqual(after.recent.map((e) => e.kind), ["undo", "save"]);
 });
 
+test("a track switch during check aborts without clicking or saving the new track", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc({ checked: "true", likedBox: "false" });
+  doc.state.onMainClick = () => {
+    doc.state.trackId = "def456";
+  };
+  const { loop, events, toast } = wire(doc, chrome);
+  loop.likes.settleMs = 5;
+  await listenThrough(loop, doc, 190000);
+  assert.deepEqual(events.map((e) => e.kind), ["fail"]);
+  assert.equal(events[0].trackId, "abc123");
+  assert.equal(events[0].detail, "save:track-changed");
+  assert.equal(toast.shown, 0);
+  assert.equal(doc.state.doneClicked, false);
+  assert.ok(doc.state.clickLog.length > 0);
+  assert.ok(doc.state.clickLog.every((c) => c.trackId === "abc123"));
+});
+
+test("a track switch during the Like settle records fail instead of saving", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  doc.state.onMainClick = () => {
+    doc.state.trackId = "def456";
+  };
+  const { loop, events, toast } = wire(doc, chrome);
+  loop.likes.settleMs = 5;
+  await listenThrough(loop, doc, 190000);
+  assert.deepEqual(events.map((e) => e.kind), ["fail"]);
+  assert.equal(events[0].trackId, "abc123");
+  assert.equal(events[0].detail, "save:track-changed");
+  assert.equal(toast.shown, 0);
+  assert.ok(doc.state.clickLog.every((c) => c.trackId === "abc123"));
+});
+
+test("a read failure after check fails closed without saving", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  const { loop, events, toast } = wire(doc, chrome);
+  let saveCalls = 0;
+  let checking = false;
+  loop.likes = {
+    check: async () => {
+      checking = true;
+      return "unliked";
+    },
+    save: async () => {
+      saveCalls += 1;
+      return { ok: true, action: "saved" };
+    },
+    remove: async () => ({ ok: false, reason: "dom-changed" }),
+  };
+  const realRead = loop.read;
+  loop.read = (now) => {
+    if (checking) throw new Error("player DOM changed");
+    return realRead(now);
+  };
+  await listenThrough(loop, doc, 190000);
+  assert.deepEqual(events.map((e) => e.kind), ["fail"]);
+  assert.equal(events[0].detail, "save:track-changed");
+  assert.equal(saveCalls, 0);
+  assert.equal(toast.shown, 0);
+});
+
+test("a thrown check records check-threw", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  const { loop, events } = wire(doc, chrome, {
+    likes: {
+      check: async () => {
+        throw new Error("menu unavailable");
+      },
+      save: async () => ({ ok: true, action: "saved" }),
+      remove: async () => ({ ok: true, action: "removed" }),
+    },
+  });
+  await listenThrough(loop, doc, 190000);
+  assert.deepEqual(events.map((e) => e.kind), ["fail"]);
+  assert.equal(events[0].detail, "save:check-threw");
+});
+
+test("handleEligible refuses a track that is no longer current", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  const { loop, events } = wire(doc, chrome);
+  doc.state.trackId = "def456";
+  const event = await loop.handleEligible(
+    { id: "abc123", uri: "spotify:track:abc123", title: "Long Song", artist: "Test Artist" },
+    0,
+  );
+  assert.equal(event.kind, "fail");
+  assert.equal(event.detail, "save:track-changed");
+  assert.deepEqual(events.map((e) => e.kind), ["fail"]);
+});
+
+test("a thrown save records save-threw", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  const { loop, events } = wire(doc, chrome, {
+    likes: {
+      check: async () => "unliked",
+      save: async () => {
+        throw new Error("menu unavailable");
+      },
+      remove: async () => ({ ok: true, action: "removed" }),
+    },
+  });
+  await listenThrough(loop, doc, 190000);
+  assert.deepEqual(events.map((e) => e.kind), ["fail"]);
+  assert.equal(events[0].detail, "save:save-threw");
+});
+
 test("a second full listen of the same track does not save twice", async () => {
   clock.now = 0;
   const chrome = stubChrome();
@@ -257,6 +390,48 @@ test("Undo after a track switch fails safe and queues the removal", async () => 
   assert.equal(doc.state.checked, "true");
   const pending = await chrome.send({ type: "ms-due", nowMs: 500000 });
   assert.deepEqual(pending.due.map((i) => [i.id, i.kind]), [["ghost", "remove"]]);
+});
+
+test("Undo that loses the track while removing fails without clicking Done", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  const { loop, events, toast } = wire(doc, chrome);
+  await listenThrough(loop, doc, 190000);
+  assert.deepEqual(events.map((e) => e.kind), ["save"]);
+  doc.state.onMainClick = () => {
+    doc.state.trackId = "def456";
+  };
+  loop.likes.settleMs = 5;
+  await toast.onUndo();
+  await flush();
+  assert.deepEqual(events.map((e) => e.kind), ["save", "fail"]);
+  assert.equal(events[1].detail, "remove:track-changed");
+  assert.equal(doc.state.doneClicked, false);
+  assert.ok(doc.state.clickLog.every((c) => c.trackId === "abc123"));
+});
+
+test("a thrown remove records remove-threw", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  const { loop, events, toast } = wire(doc, chrome, {
+    likes: {
+      check: async () => "unliked",
+      save: async () => ({ ok: true, action: "saved" }),
+      remove: async () => {
+        throw new Error("menu unavailable");
+      },
+    },
+  });
+  await listenThrough(loop, doc, 190000);
+  assert.deepEqual(events.map((e) => e.kind), ["save"]);
+  await toast.onUndo();
+  await flush();
+  assert.deepEqual(events.map((e) => e.kind), ["save", "fail"]);
+  assert.equal(events[1].detail, "remove:remove-threw");
 });
 
 test("manual retry executes while the same track keeps playing", async () => {

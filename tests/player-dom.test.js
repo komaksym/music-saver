@@ -436,6 +436,178 @@ test("remove clears Liked Songs membership and is idempotent", async () => {
   assert.deepEqual(await new LikeToggle(plain.doc, { settleMs: 1 }).remove(), { ok: true, action: "removed" });
 });
 
+test("save refuses a like when another track is current", async () => {
+  const { doc, state } = fakePlayer({ checked: "false" });
+  const toggle = new LikeToggle(doc, { settleMs: 1, currentTrackId: () => "track-b" });
+  assert.deepEqual(await toggle.save("track-a"), { ok: false, reason: "track-changed" });
+  assert.equal(state.checked, "false");
+});
+
+test("save fails closed when the track reader throws", async () => {
+  const { doc, state } = fakePlayer({ checked: "false" });
+  const toggle = new LikeToggle(doc, {
+    settleMs: 1,
+    currentTrackId: () => {
+      throw new Error("player DOM changed");
+    },
+  });
+  assert.deepEqual(await toggle.save("track-a"), { ok: false, reason: "track-changed" });
+  assert.equal(state.checked, "false");
+});
+
+test("check reports a track change instead of reading the new track", async () => {
+  let reads = 0;
+  const { doc } = fakePlayer({ checked: "false" });
+  const toggle = new LikeToggle(doc, {
+    settleMs: 1,
+    currentTrackId: () => (++reads === 1 ? "track-a" : "track-b"),
+  });
+  assert.equal(await toggle.check("track-a"), "track-changed");
+});
+
+test("save aborts before Done when the track changes during the settle", async () => {
+  let currentId = "track-a";
+  const ctx = fakePlayer({ checked: "true", likedBox: "false" });
+  const boxClick = ctx.box.click;
+  ctx.box.click = () => {
+    boxClick();
+    currentId = "track-b";
+  };
+  const toggle = new LikeToggle(ctx.doc, { settleMs: 20, currentTrackId: () => currentId });
+  assert.deepEqual(await toggle.save("track-a"), { ok: false, reason: "track-changed" });
+  assert.equal(ctx.state.doneClicked, false);
+  assert.equal(ctx.state.likedBox, "true");
+});
+
+test("remove aborts before Done when the track changes during the settle", async () => {
+  let currentId = "track-a";
+  const ctx = fakePlayer({ checked: "true", likedBox: "true" });
+  const boxClick = ctx.box.click;
+  ctx.box.click = () => {
+    boxClick();
+    currentId = "track-b";
+  };
+  const toggle = new LikeToggle(ctx.doc, { settleMs: 20, currentTrackId: () => currentId });
+  assert.deepEqual(await toggle.remove("track-a"), { ok: false, reason: "track-changed" });
+  assert.equal(ctx.state.doneClicked, false);
+});
+
+test("check aborts when the track changes while playlist rows load", async () => {
+  let currentId = "track-a";
+  const { doc } = fakePlayer({ checked: "true", likedBox: "false", rowsDelayMs: 40 });
+  setTimeout(() => {
+    currentId = "track-b";
+  }, 5);
+  const toggle = new LikeToggle(doc, {
+    settleMs: 1,
+    contentTimeoutMs: 500,
+    contentPollMs: 10,
+    currentTrackId: () => currentId,
+  });
+  assert.equal(await toggle.check("track-a"), "track-changed");
+});
+
+test("save reports a menu timeout when the menu never opens", async () => {
+  const ctx = fakePlayer({ checked: "true", likedBox: "false" });
+  ctx.mainBtn.click = () => {};
+  const out = await new LikeToggle(ctx.doc, { settleMs: 1 }).save();
+  assert.deepEqual(out, { ok: false, reason: "menu-timeout" });
+  assert.equal(ctx.state.doneClicked, false);
+});
+
+test("save aborts when the track changes while playlist rows load", async () => {
+  let currentId = "track-a";
+  const ctx = fakePlayer({ checked: "true", likedBox: "false", rowsDelayMs: 40 });
+  setTimeout(() => {
+    currentId = "track-b";
+  }, 5);
+  const toggle = new LikeToggle(ctx.doc, {
+    settleMs: 1,
+    contentTimeoutMs: 500,
+    contentPollMs: 10,
+    currentTrackId: () => currentId,
+  });
+  assert.deepEqual(await toggle.save("track-a", { state: "unliked" }), { ok: false, reason: "track-changed" });
+  assert.equal(ctx.state.doneClicked, false);
+});
+
+test("save aborts before the Liked Songs row click when the track changes", async () => {
+  let currentId = "track-a";
+  const ctx = fakePlayer({ checked: "true", likedBox: "false" });
+  const getAttribute = ctx.box.getAttribute;
+  ctx.box.getAttribute = (name) => {
+    if (name === "aria-checked") currentId = "track-b";
+    return getAttribute(name);
+  };
+  const toggle = new LikeToggle(ctx.doc, { settleMs: 1, currentTrackId: () => currentId });
+  assert.deepEqual(await toggle.save("track-a", { state: "unliked" }), { ok: false, reason: "track-changed" });
+  assert.equal(ctx.state.likedBox, "false");
+  assert.equal(ctx.state.doneClicked, false);
+});
+
+test("save re-checks the track immediately before Done", async () => {
+  let reads = 0;
+  const ctx = fakePlayer({ checked: "true", likedBox: "false" });
+  const toggle = new LikeToggle(ctx.doc, {
+    settleMs: 1,
+    currentTrackId: () => (++reads < 7 ? "track-a" : "track-b"),
+  });
+  assert.deepEqual(await toggle.save("track-a", { state: "unliked" }), { ok: false, reason: "track-changed" });
+  assert.equal(ctx.state.doneClicked, false);
+});
+
+test("remove falls back to a direct click when the menu does not open", async () => {
+  const ctx = fakePlayer({ checked: "true", likedBox: "true" });
+  let clicks = 0;
+  ctx.mainBtn.click = () => {
+    clicks += 1;
+  };
+  const out = await new LikeToggle(ctx.doc, { settleMs: 1 }).remove();
+  assert.deepEqual(out, { ok: false, reason: "confirm-mismatch" });
+  assert.equal(clicks, 2);
+  assert.equal(ctx.state.checked, "true");
+});
+
+test("remove aborts when the track changes while playlist rows load", async () => {
+  let currentId = "track-a";
+  const ctx = fakePlayer({ checked: "true", likedBox: "true", rowsDelayMs: 40 });
+  setTimeout(() => {
+    currentId = "track-b";
+  }, 5);
+  const toggle = new LikeToggle(ctx.doc, {
+    settleMs: 1,
+    contentTimeoutMs: 500,
+    contentPollMs: 10,
+    currentTrackId: () => currentId,
+  });
+  assert.deepEqual(await toggle.remove("track-a"), { ok: false, reason: "track-changed" });
+  assert.equal(ctx.state.doneClicked, false);
+});
+
+test("remove aborts before the Liked Songs row click when the track changes", async () => {
+  let currentId = "track-a";
+  const ctx = fakePlayer({ checked: "true", likedBox: "true" });
+  const getAttribute = ctx.box.getAttribute;
+  ctx.box.getAttribute = (name) => {
+    if (name === "aria-checked") currentId = "track-b";
+    return getAttribute(name);
+  };
+  const toggle = new LikeToggle(ctx.doc, { settleMs: 1, currentTrackId: () => currentId });
+  assert.deepEqual(await toggle.remove("track-a"), { ok: false, reason: "track-changed" });
+  assert.equal(ctx.state.doneClicked, false);
+});
+
+test("remove re-checks the track immediately before Done", async () => {
+  let reads = 0;
+  const ctx = fakePlayer({ checked: "true", likedBox: "true" });
+  const toggle = new LikeToggle(ctx.doc, {
+    settleMs: 1,
+    currentTrackId: () => (++reads < 7 ? "track-a" : "track-b"),
+  });
+  assert.deepEqual(await toggle.remove("track-a"), { ok: false, reason: "track-changed" });
+  assert.equal(ctx.state.doneClicked, false);
+});
+
 test("the widget anchor wins over document-level anchors", () => {
   const { doc } = fakePlayer({
     anchorHref: "https://open.spotify.com/x?uri=spotify:track:docTrack111",
