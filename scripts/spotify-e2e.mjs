@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { scenarios, liveScenariosFor, assertLiveTrack } from '../tests/e2e/scenarios.mjs';
 import { importCookies } from './spotify-e2e-cookies.mjs';
 import { assertSongIdentity } from './spotify-e2e-identity.mjs';
+import { installSignalShutdown } from './spotify-e2e-shutdown.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const mode = process.argv[2];
@@ -76,6 +77,26 @@ function storage(code) {
   try { ab('wait', '#enabled'); return evaluate(code); }
   finally { ab('tab', 'player'); }
 }
+function pausePlayer() {
+  if (evaluate("document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')==='Pause'")) {
+    ab('click', '[data-testid="control-button-playpause"]');
+    ab('wait', '--fn', "document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')==='Play'");
+  }
+}
+function stopExtensionActivity() {
+  let failure;
+  try {
+    storage("chrome.storage.local.set({settings:{enabled:false,thresholdRatio:0.9,minSoundedMs:60000}})");
+  } catch (error) { failure = error; }
+  try { pausePlayer(); }
+  catch (error) { failure ??= error; }
+  if (failure) throw failure;
+}
+function stopRecording() {
+  if (!recordingStarted) return;
+  ab('record', 'stop');
+  recordingStarted = false;
+}
 function configure(settings) {
   const stored = storage(`chrome.storage.local.set({settings:${JSON.stringify(settings)},'activity-log':[],'retry-queue':[]}).then(()=>chrome.storage.local.get('settings')).then(x=>x.settings)`);
   assert.deepEqual(stored, settings, 'scenario settings persisted');
@@ -84,11 +105,18 @@ function events() { return storage("chrome.storage.local.get(['activity-log','re
 const results = [];
 let server;
 let restore;
+let restoreRun;
 let initialLiked;
 let cleanupError;
 const decisionClips = mode === 'live' && process.env.SPOTIFY_E2E_DECISION_CLIPS === '1';
 const recording = mode === 'live' && !decisionClips && process.env.SPOTIFY_E2E_RECORD === '1' ? resolve(artifacts, 'agent-session.webm') : null;
 let recordingStarted = false;
+const shutdown = installSignalShutdown({
+  process,
+  stopActivity: stopExtensionActivity,
+  stopRecording,
+  restore: () => restore?.(),
+});
 try {
   ab('open', 'about:blank');
   ab('tab', 'new', '--label', 'player', 'about:blank');
@@ -203,12 +231,6 @@ try {
       window.__msE2EProgress = position;
       return (${playingRequestedSong}) && Number.isFinite(previous) && position > previous;
     })()`;
-    function pausePlayer() {
-      if (evaluate("document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')==='Pause'")) {
-        ab('click', '[data-testid="control-button-playpause"]');
-        ab('wait', '--fn', "document.querySelector('[data-testid=\"control-button-playpause\"]')?.getAttribute('aria-label')==='Play'");
-      }
-    }
     function readNowPlayingIdentity() {
       return evaluate(`(() => {
         const widget=document.querySelector('[data-testid="now-playing-widget"]');
@@ -248,10 +270,8 @@ try {
       pausePlayer();
       return assertRequestedSong('requested song selected');
     }
-    evaluate('window.__msE2EProgress = null');
-    ab('click', playButton);
     phase = 'Spotify playback start';
-    ab('wait', '--fn', progressingRequestedSong);
+    startRequestedSong();
     const likeButton = '[data-testid="now-playing-widget"] button[aria-checked]';
     async function liked(next) {
       return evaluate(`(async()=>{
@@ -292,20 +312,23 @@ try {
     phase = 'initial Liked Songs state';
     ab('wait', likeButton);
     initialLiked = await guardedLiked(null);
-    restore = async () => {
+    restore = () => (restoreRun ??= (async () => {
       phase = 'restore original state';
       pausePlayer();
       storage("chrome.storage.local.set({settings:{enabled:false,thresholdRatio:0.9,minSoundedMs:60000}})");
       try {
         startRequestedSong();
         ab('wait', likeButton);
+        assertRequestedSong('before restoring Liked-state');
         await guardedLiked(initialLiked);
         startRequestedSong();
         ab('wait', likeButton);
+        assertRequestedSong('before verifying restoration');
         assert.equal(await guardedLiked(null), initialLiked, 'original liked state restored after reload');
+        assertRequestedSong('after restoration');
         screenshot('restored');
       } finally { restoreSettings(); }
-    };
+    })());
     evaluate(`window.__msE2EDocument = ${JSON.stringify(session)}`);
     function assertSamePlayer() {
       assert.equal(evaluate('window.__msE2EDocument'), session, 'options access preserves the Spotify document');
@@ -473,4 +496,5 @@ try {
   const bundleSha256 = createHash('sha256').update(readFileSync(resolve(root, 'extension/content.bundle.js'))).digest('hex');
   writeFileSync(resolve(artifacts, 'results.json'), JSON.stringify({ mode, bundleSha256, recording, recordings: results.map(result => result.recording).filter(Boolean), results, initialLiked, cleanupError, passed: process.exitCode !== 1, timestamp: new Date().toISOString() }, null, 2));
   rmSync(work, { recursive: true, force: true });
+  shutdown.dispose();
 }
