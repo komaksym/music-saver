@@ -154,7 +154,6 @@ function restore([cookiesPath]) {
     try {
       run(args);
     } catch (error) {
-      if (error instanceof CliError) throw error;
       throw new CliError(`failed to restore cookie ${cookie.name ?? "unknown"} (${error.name})`);
     }
   }
