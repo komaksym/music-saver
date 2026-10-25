@@ -1,12 +1,9 @@
 {
   "skill": "baoyu-infographic",
-  "backend": "agent-drawn",
-  "source": "infographic.html",
-  "step1_note": "codex-image_gen rendered bytes but isolate has no persist path; fallback drawn from prompts/01-infographic.md",
-  "image_sha256": "7c894319548c30bc59abeab69496ee43bea64fa56058aa9df8986e2d6901714e",
-  "prompt_sha256": "90fa40303ad8a9b139ddbe00bd372832c3c7cac9163ab397bcaca37efe2216de",
-  "purpose": "This schematic shows the sounded-time budget fix that makes Spotify auto-save work in background tabs, verified live muted.",
-  "visual_note": "Viewed infographic.png: title Sounded-Time Budget Fix with BEFORE per-tick clip panel showing 5:1 undercount and AFTER playing-time budget panel showing 1:1 tracking plus live-verified footer.",
-  "created_at": "2026-10-21T12:35:55Z",
-  "user_approval": "User standing instruction (2026-10-19), recorded in the baoyu-infographic skill: the fallback generation should still use baoyu-infographic skill. Applied here to draw the PR visual via the skill fallback when the codex-image_gen bytes could not be persisted to the repo path from the isolate."
+  "backend": "codex-imagegen",
+  "image_sha256": "d09831177befae87a61552a7c97562dd47083c4fa21001954f9f95f32df3641f",
+  "prompt_sha256": "3ce19c7fb24aa1f4bb3ebbf97e65f0897a58320a5cb8f5b1bae16cf747116598",
+  "purpose": "Sounded-time credit accumulates during unchanged progress and caps large forward seeks to the current tick.",
+  "visual_note": "Viewed Count listening, not seeking; Sounded-time fix; SoundedTimeSampler; Credit the available budget; Large forward seek; Cap credit to this tick.",
+  "created_at": "2026-10-25T00:22:33.314553+00:00"
 }
