@@ -1,0 +1,1 @@
+Issue #26: an instant skip could like the skipped-to track because the Like transaction acted on the current DOM after awaiting a menu-backed check. The fix re-reads the current track before each click and after each await, fails closed with track-changed, and rebuilds the bundle. Tests cover mid-check and mid-settle switches, undo, and read failures.
