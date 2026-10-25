@@ -1,0 +1,9 @@
+{
+  "skill": "baoyu-infographic",
+  "backend": "codex-imagegen",
+  "image_sha256": "ba362662c8c28657d8f989e892442d96ddccafd7322373dc9b9251a6a0726daa",
+  "prompt_sha256": "3f6bafb8d3faa566faf63deef6d1c74ed7d4bc287a1483ba887781fa6492be37",
+  "purpose": "PR 50 shows the repaired manual E2E harness: one session for every call, honest assert exit codes, the real smoke heading, and the retired command.",
+  "visual_note": "Viewed the final PNG. Read 'One session, real exit codes, honest smoke', 'resolve once', 'reuse on every call', 'close the same one', 'pass exits 0', 'fail exits 1', 'wait for Example Domain', 'cookies-restore', '136 tests', and 'canonical runner unchanged'.",
+  "created_at": "2026-10-25T16:11:48.504Z"
+}

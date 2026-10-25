@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Shared launch policy for every agent-browser run in this repo. Sourced by
-# scripts/e2e-agent-browser.sh and scripts/e2e-matrix.sh, which reach the
-# browser only through ab and ab_ext. This file is the one place that spells
-# the agent-browser launch flags, so login state never lands in a browser
-# started with a different session, profile, or extension set.
+# Shared launch policy for the manual agent-browser harness. The canonical
+# fixture and live suites launch through scripts/spotify-e2e.mjs instead.
+# scripts/e2e-agent-browser.sh reaches the browser only through ab and ab_ext.
+# This file is the one place that spells the launch flags, so login state never
+# lands in a browser started with a different session, profile, or extension
+# set.
 # shellcheck shell=bash
 
 ROOT="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,18 +21,25 @@ need() {
   command -v "$1" >/dev/null 2>&1 || { echo "missing required command: $1" >&2; exit 2; }
 }
 
-# Resolve the session once, on first browser use. Resolving eagerly would
-# spawn agent-browser before a script can fail closed on a missing profile.
-harness_session() {
-  if [ -z "$SESSION" ]; then
-    SESSION="$(agent-browser session id --scope worktree --prefix ms-e2e)"
-  fi
-  printf '%s' "$SESSION"
-}
-
 # ab runs every browser command with identical launch flags.
 ab() {
-  agent-browser --session "$(harness_session)" --profile "$PROFILE" "$@"
+  # Resolve the session once, in this shell, on first browser use. A command
+  # substitution would discard the assignment, leaving cleanup without a
+  # session to close. Resolving lazily still lets a script fail closed on a
+  # missing profile or binary before the browser starts.
+  if [ -z "$SESSION" ]; then
+    local resolved
+    if ! resolved="$(agent-browser session id --scope worktree --prefix ms-e2e)"; then
+      printf '%s\n' "could not resolve an agent-browser session" >&2
+      return 2
+    fi
+    if [ -z "$resolved" ]; then
+      printf '%s\n' "agent-browser returned an empty session id" >&2
+      return 2
+    fi
+    SESSION="$resolved"
+  fi
+  agent-browser --session "$SESSION" --profile "$PROFILE" "$@"
 }
 
 # ab_ext adds the unpacked extension for scenarios that assert its behavior.

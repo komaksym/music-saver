@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readPlayback } from "../extension/lib/player-dom.js";
 import { matrix, scenarios, liveScenarios, liveScenariosFor, assertLiveTrack } from './e2e/scenarios.mjs';
 import { WatchLoop, shouldBoot } from '../extension/content.js';
@@ -22,6 +22,15 @@ test('browser workflows install the locked harness without a global package inst
     assert.match(workflow, /^        run: npx --no-install agent-browser install --with-deps$/m);
     assert.doesNotMatch(workflow, /npm install --global|npm install -g/);
   }
+});
+
+test('the canonical runner is the only E2E lane wired into CI', () => {
+  assert.match(e2eJob, /node scripts\/spotify-e2e\.mjs fixture/);
+  assert.match(liveWorkflow, /node scripts\/spotify-e2e\.mjs live/);
+  for (const workflow of [prWorkflow, liveWorkflow]) {
+    assert.doesNotMatch(workflow, /e2e-(?:agent-browser|matrix)\.sh/);
+  }
+  assert.equal(existsSync(new URL('../scripts/e2e-matrix.sh', import.meta.url)), false);
 });
 
 test('the live workflow records the authenticated browser session', () => {
