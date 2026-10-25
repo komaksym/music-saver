@@ -187,6 +187,42 @@ test("readTrack refuses an ad-like segment without a track anchor", () => {
   assert.equal(readTrack(doc), null);
 });
 
+for (const candidate of [
+  { name: "stale", href: "spotify:track:previousSong", title: "Previous song" },
+  { name: "invalid", href: "/album/album123", title: "Current song" },
+]) {
+  for (const location of ["sidebar", "document"]) {
+    test(`readTrack skips a ${candidate.name} sidebar anchor for a current ${location} anchor`, () => {
+      const current = node({ href: "spotify:track:currentSong" }, "Current song");
+      const rejected = node({ href: candidate.href }, candidate.title);
+      const widget = {
+        querySelector(selector) {
+          if (selector.includes("info-title")) return node({}, "Current song");
+          if (selector.includes("info-artist")) return node({}, "Current artist");
+          return null;
+        },
+      };
+      const sidebar = {
+        querySelector: () => rejected,
+        querySelectorAll: () => location === "sidebar" ? [rejected, current] : [rejected],
+      };
+      const doc = {
+        querySelector(selector) {
+          if (selector === '[data-testid="now-playing-widget"]') return widget;
+          if (selector === 'aside[aria-label="Now playing view"]') return sidebar;
+          return selector.startsWith("a[") && location === "document" ? current : null;
+        },
+      };
+      assert.deepEqual(readTrack(doc), {
+        id: "currentSong",
+        uri: "spotify:track:currentSong",
+        title: "Current song",
+        artist: "Current artist",
+      });
+    });
+  }
+}
+
 test("readTrack returns null when the widget or names are missing", () => {
   assert.equal(readTrack({ querySelector: () => null }), null);
   assert.equal(readTrack(fakePlayer({ title: "  " }).doc), null);

@@ -154,6 +154,14 @@ function matchesTitle(anchor, title) {
   return !!expected && (label.includes(expected) || expected.includes(label));
 }
 
+function anchorTrackId(anchor) {
+  for (const name of ["href", "data-uri", "data-context-uri"]) {
+    const id = extractTrackId(attrOf(anchor, name));
+    if (id) return id;
+  }
+  return null;
+}
+
 function findTrackAnchor(doc, widget, title) {
   const selectors = [
     SELECTORS.trackAnchor,
@@ -166,26 +174,21 @@ function findTrackAnchor(doc, widget, title) {
   } catch (e) {
     view = null;
   }
-  const roots = [widget, view].filter(Boolean);
+  const roots = [widget, view, doc].filter(Boolean);
   for (const root of roots) {
     for (const selector of selectors) {
-      let node = null;
+      let nodes = [];
       try {
-        node = root.querySelector(selector);
+        nodes = root.querySelectorAll
+          ? root.querySelectorAll(selector)
+          : [root.querySelector(selector)];
       } catch (e) {
         continue;
       }
-      if (node) return node;
+      for (const node of nodes) {
+        if (anchorTrackId(node) && (root === widget || matchesTitle(node, title))) return node;
+      }
     }
-  }
-  for (const selector of selectors) {
-    let node = null;
-    try {
-      node = doc.querySelector(selector);
-    } catch (e) {
-      continue;
-    }
-    if (node && matchesTitle(node, title)) return node;
   }
   return null;
 }
@@ -203,14 +206,7 @@ function readTrack(doc) {
   const artist = textOf(widget, SELECTORS.artist) || textOf(doc, SELECTORS.artist);
   if (!title || !artist) return null;
   const anchor = findTrackAnchor(doc, widget, title);
-  const anchorUris = anchor
-    ? [attrOf(anchor, "href"), attrOf(anchor, "data-uri"), attrOf(anchor, "data-context-uri")]
-    : [];
-  let trackId = null;
-  for (const candidate of anchorUris) {
-    trackId = extractTrackId(candidate);
-    if (trackId) break;
-  }
+  const trackId = anchorTrackId(anchor);
   if (!trackId) return null;
   return { id: trackId, uri: "spotify:track:" + trackId, title, artist };
 }
