@@ -69,6 +69,9 @@ jobs:
           files: coverage/lcov.info
           disable_search: true
           fail_ci_if_error: true
+      - name: Enforce changed-line coverage
+        if: github.event_name == 'pull_request'
+        run: node scripts/patch-coverage.mjs --base "${{ github.event.pull_request.base.sha }}"
 
   gate:
     if: always()
