@@ -61,12 +61,11 @@ export class WatchLoop {
     try {
       sample = this.read(now);
     } catch (e) {
-      return null;
-    }
-    if (!sample || !sample.track || !(sample.durationMs > 0)) {
       this.sampler.reset();
       return null;
     }
+    const delta = this.sampler.observe(sample);
+    if (!sample || !sample.track || !(sample.durationMs > 0)) return null;
     if (sample.track.id !== this.lastPolledId) {
       this.lastPolledId = sample.track.id;
       this.lastRetryPollMs = now;
@@ -75,7 +74,6 @@ export class WatchLoop {
       this.lastRetryPollMs = now;
       await this.pollRetries(sample.track, now);
     }
-    const delta = this.sampler.observe(sample);
     if (!(delta > 0)) return null;
     let eligible = false;
     try {

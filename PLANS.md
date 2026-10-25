@@ -1,5 +1,20 @@
 # music-saver plans
 
+## Coverage gate
+
+### Summary
+
+Generate LCOV from the existing Node tests, including untested extension files.
+Upload coverage with GitHub OIDC and require 80 percent coverage on changed executable lines.
+Keep project-wide coverage informational while the older code gains tests.
+
+### Milestones
+
+1. Add the coverage command, Codecov policy, and upload job.
+2. Verify the report locally and run the PR checks and browser fixture matrix.
+3. Verify Codecov emits its patch status, merge the integration, then require that exact status in the ruleset.
+4. If GitHub App installation is missing, retain the implementation PR and report the external setup blocker.
+
 ## Summary
 
 Spotify-first Chromium extension that auto-saves tracks the user listens through while working. Design is fully locked: Liked Songs destination, sounded-time 90 percent plus 60s floor once per track ID, auto-save with Undo toast and local log, check-then-skip already-saved tracks, retry queue with backoff plus manual retry, settings with threshold 90 plus floor 60s plus enable-disable, Spotify web scope, public repo. Q11 answered NO Premium, so v1 drives the web player through a content script (ADR-0003) and the tested API client stays parked for a post-Premium future.
@@ -78,6 +93,28 @@ must fail the live job, never produce a green skip.
 ## Open questions
 
 - None. All questions Q1-Q11 answered; any new fork gets a new ADR.
+
+## PR #10 reconciliation
+
+### Summary
+
+Merge current `main` (`b0cbc20`) into the ad-tolerance branch without rebasing.
+Keep main's shared PR gate, live E2E workflow and fixtures, Cubic advisory config,
+Dependabot, security tests, and manifest tests. Retire the branch's superseded local
+gate workflows, scripts, and tests. Preserve ad detection, stable track identity,
+sampler reset for ads and unreadable samples, and the branch regression coverage.
+
+### Milestones
+
+1. Merge `origin/main` and resolve source, test, docs, and workflow conflicts by intent.
+2. Keep main's `pr.yml`, `spotify-e2e.yml`, Dependabot, and E2E fixtures; remove the
+   branch-only gate automation that main replaced.
+3. Adapt conflict tests to the merged sample shape and add behavior-level coverage only
+   where the merge exposes a gap.
+4. Run `npm ci`, lint, `verify`, `actionlint`, and `zizmor`; review the final diff with
+   deslop and no-comments.
+5. Commit the merge and report the local SHA, diff versus main, preserved behavior, and
+   proof log paths. Leave remote changes to the parent.
 
 ## E2E session pickup
 
