@@ -1,5 +1,9 @@
 # music-saver
 
+[![PR checks](https://github.com/komaksym/music-saver/actions/workflows/pr.yml/badge.svg)](https://github.com/komaksym/music-saver/actions/workflows/pr.yml)
+![GitHub issues](https://img.shields.io/github/issues/komaksym/music-saver)
+![GitHub pull requests](https://img.shields.io/github/issues-pr/komaksym/music-saver)
+
 Chromium extension that auto-saves Spotify tracks you listen through while you work. Spotify-only MVP: no Premium, Spotify web player only.
 
 ## How it works
