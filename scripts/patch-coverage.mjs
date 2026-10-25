@@ -1,8 +1,8 @@
 // Changed-line coverage gate. c8 writes coverage/lcov.info for every extension
 // source file, and this module compares the lines a pull request adds with the
-// lines the suite executed. Codecov reports the same numbers, but its commit
-// status needs the GitHub App; this check keeps the 80% rule enforceable from
-// the required gate alone. Lines that never appear in lcov are not executable,
+// lines the suite executed. Codecov reports the same numbers in its own check;
+// this script keeps the rule enforceable from the required gate as well. Lines
+// that never appear in lcov are not executable,
 // so comments and blank additions cost nothing.
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
