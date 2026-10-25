@@ -31,7 +31,32 @@ class FakeProcess {
   }
 }
 
-function setup(overrides = {}) {
+class FakeClock {
+  timers = [];
+  now = 0;
+
+  schedule(callback, delay) {
+    const timer = { callback, delay, cancelled: false };
+    this.timers.push(timer);
+    return timer;
+  }
+
+  cancel(timer) {
+    if (timer) timer.cancelled = true;
+  }
+
+  advance(ms) {
+    this.now += ms;
+    for (const timer of this.timers) {
+      if (!timer.cancelled && timer.delay <= this.now) {
+        timer.cancelled = true;
+        timer.callback();
+      }
+    }
+  }
+}
+
+function setup({ clock = new FakeClock(), ...overrides } = {}) {
   const calls = [];
   const exits = [];
   const reports = [];
@@ -46,9 +71,11 @@ function setup(overrides = {}) {
     restore: async () => { calls.push("restore"); },
     exit: code => { exits.push(code); settleExit(code); },
     report: message => { reports.push(message); },
+    schedule: (callback, delay) => clock.schedule(callback, delay),
+    cancel: timer => clock.cancel(timer),
     ...overrides,
   });
-  return { process, shutdown, calls, exits, reports, exited };
+  return { process, shutdown, clock, calls, exits, reports, exited };
 }
 
 test("uses a ten-second cleanup bound and conventional signal exit codes", () => {
@@ -98,30 +125,45 @@ test("a second signal exits immediately without restarting cleanup", async () =>
 });
 
 test("a hung cleanup exits nonzero after the bound and reports incomplete cleanup", async () => {
+  let release;
+  const hung = new Promise(resolve => { release = resolve; });
   const harness = setup({
     timeoutMs: 25,
-    stopActivity: () => new Promise(() => {}),
+    stopActivity: () => hung,
     stopRecording: async () => { throw new Error("unreachable recording step"); },
   });
-  const startedAt = Date.now();
   harness.process.emit("SIGTERM");
+  harness.clock.advance(24);
+  assert.deepEqual(harness.exits, [], "cleanup has not timed out before the bound");
+  harness.clock.advance(1);
   assert.equal(await harness.exited, 1);
-  assert.ok(Date.now() - startedAt >= 20, "cleanup waited for the bound");
   assert.deepEqual(harness.exits, [1]);
   assert.match(harness.reports.join("\n"), /cleanup incomplete/i);
   assert.match(harness.reports.join("\n"), /25 ms/);
+  release();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(harness.exits, [1], "the timed-out cleanup does not exit twice");
   harness.shutdown.dispose();
 });
 
 test("the bound covers a hung restore after the earlier steps finish", async () => {
+  let release;
+  const hung = new Promise(resolve => { release = resolve; });
   const harness = setup({
     timeoutMs: 25,
-    restore: () => new Promise(() => {}),
+    restore: () => hung,
   });
   harness.process.emit("SIGINT");
-  assert.equal(await harness.exited, 1);
+  await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(harness.calls, ["stopActivity", "stopRecording"]);
+  harness.clock.advance(24);
+  assert.deepEqual(harness.exits, []);
+  harness.clock.advance(1);
+  assert.equal(await harness.exited, 1);
+  assert.deepEqual(harness.exits, [1]);
   assert.match(harness.reports.join("\n"), /cleanup incomplete/i);
+  release();
+  await new Promise(resolve => setImmediate(resolve));
   harness.shutdown.dispose();
 });
 
