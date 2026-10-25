@@ -12,7 +12,11 @@ const FIELDS = [
   "secure",
   "session",
   "expires",
+  "sameSite",
+  "hostOnly",
 ];
+
+const SAME_SITE_VALUES = ["Strict", "Lax", "None"];
 
 // Messages from this class are safe to print. Operator input and cookie
 // values never pass through. Everything else prints as a name only.
@@ -40,7 +44,11 @@ function cookieKey(cookie) {
 }
 
 function keepFields(cookie) {
-  return Object.fromEntries(FIELDS.map((field) => [field, cookie[field]]));
+  return Object.fromEntries(
+    FIELDS
+      .filter((field) => cookie[field] !== undefined)
+      .map((field) => [field, cookie[field]]),
+  );
 }
 
 export function mergeSpotifyCookieSnapshots(openSnapshot, accountsSnapshot) {
@@ -53,17 +61,62 @@ export function mergeSpotifyCookieSnapshots(openSnapshot, accountsSnapshot) {
   return [...merged.values()];
 }
 
+function cookieLabel(cookie) {
+  return cookie.name ?? "unknown";
+}
+
+function cookieDomain(cookie) {
+  if (typeof cookie.domain !== "string" || cookie.domain.length === 0) {
+    throw new CliError(`cookie ${cookieLabel(cookie)} has no domain`);
+  }
+  return cookie.domain;
+}
+
+function isHostOnly(cookie) {
+  if (typeof cookie.name === "string" && cookie.name.startsWith("__Host-")) return true;
+  if (cookie.hostOnly === true) return true;
+  return !cookieDomain(cookie).startsWith(".");
+}
+
+// CDP accepts either url or domain+path. A host-only cookie must use url, so
+// its path goes in the URL; --domain would widen it to subdomains.
+function hostOnlyUrl(cookie) {
+  const host = cookieDomain(cookie).replace(/^\./, "");
+  if (!host) throw new CliError(`cookie ${cookieLabel(cookie)} has no host`);
+  const path = typeof cookie.path === "string" && cookie.path.startsWith("/")
+    ? cookie.path
+    : "/";
+  return `${cookie.secure ? "https" : "http"}://${host}${path}`;
+}
+
+function sameSitePolicy(cookie) {
+  if (cookie.sameSite === undefined || cookie.sameSite === null || cookie.sameSite === "") {
+    return cookie.secure ? "None" : "Lax";
+  }
+  const requested = String(cookie.sameSite);
+  const policy = SAME_SITE_VALUES.find(
+    (value) => value.toLowerCase() === requested.toLowerCase(),
+  );
+  if (!policy) {
+    throw new CliError(`cookie ${cookieLabel(cookie)} has an unsupported SameSite policy`);
+  }
+  if (policy === "None" && !cookie.secure) {
+    throw new CliError(`cookie ${cookieLabel(cookie)} has SameSite=None without Secure`);
+  }
+  return policy;
+}
+
 export function cookieSetArgs(cookie) {
   const args = ["cookies", "set", cookie.name, cookie.value];
-  if (cookie.name.startsWith("__Host-")) {
-    args.push("--url", "https://accounts.spotify.com/");
+  const sameSite = sameSitePolicy(cookie);
+  if (isHostOnly(cookie)) {
+    args.push("--url", hostOnlyUrl(cookie));
   } else {
-    args.push("--domain", cookie.domain);
+    args.push("--domain", cookieDomain(cookie), "--path", cookie.path || "/");
   }
-  args.push("--path", cookie.path || "/");
   if (cookie.httpOnly) args.push("--httpOnly");
   if (cookie.secure) args.push("--secure");
-  args.push("--sameSite", cookie.secure ? "None" : "Lax");
+  args.push("--sameSite", sameSite);
   if (!cookie.session && cookie.expires > 0) {
     args.push("--expires", String(Math.floor(cookie.expires)));
   }
@@ -94,12 +147,14 @@ function restore([cookiesPath]) {
     ...args,
   ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
-  run(["open", "https://open.spotify.com/"]);
   const cookies = JSON.parse(readFileSync(cookiesPath, "utf8"));
-  for (const cookie of cookies) {
+  const commands = cookies.map((cookie) => ({ cookie, args: cookieSetArgs(cookie) }));
+  run(["open", "https://open.spotify.com/"]);
+  for (const { cookie, args } of commands) {
     try {
-      run(cookieSetArgs(cookie));
+      run(args);
     } catch (error) {
+      if (error instanceof CliError) throw error;
       throw new CliError(`failed to restore cookie ${cookie.name ?? "unknown"} (${error.name})`);
     }
   }

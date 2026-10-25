@@ -9,7 +9,7 @@ import {
   mergeSpotifyCookieSnapshots,
 } from "../scripts/e2e-cookies.mjs";
 
-function cookie(name, domain, value) {
+function cookie(name, domain, value, overrides = {}) {
   return {
     name,
     value,
@@ -19,6 +19,7 @@ function cookie(name, domain, value) {
     secure: true,
     session: false,
     expires: 1_900_000_000,
+    ...overrides,
   };
 }
 
@@ -37,6 +38,52 @@ test("merges the open and accounts snapshots with accounts taking precedence", (
     cookie("sp_key", ".spotify.com", "key"),
     cookie("__Host-sp_csrf_sid", "accounts.spotify.com", "csrf"),
   ]);
+});
+
+test("preserves host-only scope and SameSite through merge", () => {
+  const hostOnly = cookie("sp_t", "open.spotify.com", "host-token", {
+    hostOnly: true,
+    sameSite: "Lax",
+  });
+  const domainScoped = cookie("sp_dc", ".spotify.com", "domain-token", {
+    hostOnly: false,
+    sameSite: "Strict",
+  });
+
+  assert.deepEqual(mergeSpotifyCookieSnapshots({ data: { cookies: [hostOnly, domainScoped] } }, []), [
+    hostOnly,
+    domainScoped,
+  ]);
+});
+
+test("preserves explicit SameSite values through merge and import", () => {
+  for (const sameSite of ["Strict", "Lax", "None"]) {
+    const source = cookie("sp_dc", ".spotify.com", "token", { sameSite });
+    const [merged] = mergeSpotifyCookieSnapshots({ data: { cookies: [source] } }, []);
+
+    assert.equal(merged.sameSite, sameSite);
+    const args = cookieSetArgs(merged);
+    assert.equal(args[args.indexOf("--sameSite") + 1], sameSite);
+  }
+});
+
+test("derives SameSite only when the snapshot omits it", () => {
+  const secureArgs = cookieSetArgs(cookie("sp_dc", ".spotify.com", "token"));
+  assert.equal(secureArgs[secureArgs.indexOf("--sameSite") + 1], "None");
+
+  const laxArgs = cookieSetArgs(cookie("sp_lax", "open.spotify.com", "token", { secure: false }));
+  assert.equal(laxArgs[laxArgs.indexOf("--sameSite") + 1], "Lax");
+});
+
+test("SameSite=None without Secure fails closed and names only the cookie", () => {
+  const sentinel = "SENTINEL-COOKIE-VALUE";
+  const unsafe = cookie("sp_dc", ".spotify.com", sentinel, { sameSite: "None", secure: false });
+
+  assert.throws(() => cookieSetArgs(unsafe), (error) => {
+    assert.match(error.message, /sp_dc/);
+    assert.equal(error.message.includes(sentinel), false);
+    return true;
+  });
 });
 
 test("drops cookies outside Spotify domains and lookalikes", () => {
@@ -97,6 +144,29 @@ test("host cookies use the accounts URL and other cookies use their domain", () 
   assert.equal(domainArgs[domainArgs.indexOf("--domain") + 1], ".spotify.com");
 });
 
+test("domain cookies keep their leading dot and path on import", () => {
+  const args = cookieSetArgs(cookie("sp_dc", ".spotify.com", "token", {
+    sameSite: "Lax",
+    path: "/api",
+  }));
+
+  assert.equal(args.includes("--url"), false);
+  assert.equal(args[args.indexOf("--domain") + 1], ".spotify.com");
+  assert.equal(args[args.indexOf("--path") + 1], "/api");
+});
+
+test("host-only cookies use a URL and keep their path", () => {
+  const args = cookieSetArgs(cookie("sp_t", "open.spotify.com", "token", {
+    hostOnly: true,
+    sameSite: "Lax",
+    path: "/api",
+  }));
+
+  assert.equal(args.includes("--domain"), false);
+  assert.equal(args.includes("--path"), false);
+  assert.equal(args[args.indexOf("--url") + 1], "https://open.spotify.com/api");
+});
+
 test("restore failure names the cookie without printing its value", () => {
   const dir = mkdtempSync(join(tmpdir(), "music-saver-restore-"));
   const bin = join(dir, "bin");
@@ -131,4 +201,34 @@ esac
   assert.match(result.stderr, /failed to restore cookie sp_dc \(Error\)/);
   assert.equal(result.stderr.includes(sentinel), false);
   assert.equal(result.stderr.includes("--domain"), false);
+});
+
+test("restore rejects SameSite=None without Secure without printing the value", () => {
+  const dir = mkdtempSync(join(tmpdir(), "music-saver-restore-unsafe-"));
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "agent-browser"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const cookiesPath = join(dir, "cookies.json");
+  const sentinel = "SENTINEL-COOKIE-VALUE";
+  writeFileSync(cookiesPath, JSON.stringify([
+    cookie("sp_dc", ".spotify.com", sentinel, { sameSite: "None", secure: false }),
+  ]));
+
+  const result = spawnSync(process.execPath, [
+    "scripts/e2e-cookies.mjs",
+    "restore",
+    cookiesPath,
+  ], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+      SESSION: "test-session",
+      PROFILE: dir,
+    },
+  });
+
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  assert.match(result.stderr, /cookie sp_dc has SameSite=None without Secure/);
+  assert.equal(result.stderr.includes(sentinel), false);
 });
