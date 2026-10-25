@@ -310,7 +310,9 @@ class SoundedTimeSampler {
     this.playingWallMs += wall;
     const progress = sample.positionMs - prev.positionMs;
     if (!(progress > 0)) return 0;
-    const delta = Math.min(progress, Math.max(0, this.playingWallMs - this.creditedMs));
+    const budget = Math.max(0, this.playingWallMs - this.creditedMs);
+    const seek = progress > budget + wall;
+    const delta = seek ? wall : Math.min(progress, budget);
     if (!(delta > 0)) return 0;
     this.creditedMs += delta;
     return delta;
