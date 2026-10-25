@@ -144,3 +144,7 @@ recorded in both result files and in the E2E guide.
   the workflow's dedicated-account concurrency group.
 - Smallest safe decomposition. One worker owns the coupled cookie-import fix.
   Additional writers would split one small change without useful independence.
+
+## PR 8 reconciliation
+
+Merge main at b0cbc20 without rewriting branch history. Keep main's CI, security, ad detection, and canonical E2E modules. Preserve sounded-time budgeting and the forward-seek regression test. Review obsolete branch infrastructure against main, triage review threads locally, then run dependency installation, lint, verify, actionlint, and zizmor before the local merge commit. The parent owns all remote changes.
