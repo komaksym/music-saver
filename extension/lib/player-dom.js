@@ -212,9 +212,6 @@ function hasVisibleAd(doc) {
 // "ad-type-ad" while an ad plays. The ad bar swap also renders the v2 widget.
 // Use either signal so a stale track anchor can never resurrect an ad segment.
 export function readAdType(doc) {
-  // Check the v2 widget first and independently: it can appear while the
-  // bar still shows ad-type-none with stale track UI, and that state must
-  // read as an ad, never as music.
   try {
     if (doc.querySelector(SELECTORS.adWidget)) return "ad";
   } catch (e) {
@@ -233,10 +230,6 @@ export function readAdType(doc) {
   return null;
 }
 
-// A playback sample is a track only when readTrack, readTimes, and
-// findLikeControl all succeed; when a player is present, anything else
-// reads as an ad (no player at all returns null). Ads reset the sampler,
-// so they never add to a track's sounded-time budget.
 export function readPlayback(doc, wallMs) {
   if (hasVisibleAd(doc)) return null;
   const playBtn = findPlayButton(doc);
