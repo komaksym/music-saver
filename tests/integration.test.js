@@ -294,6 +294,22 @@ test("a thrown check records check-threw", async () => {
   assert.equal(events[0].detail, "save:check-threw");
 });
 
+test("handleEligible refuses a track that is no longer current", async () => {
+  clock.now = 0;
+  const chrome = stubChrome();
+  await boot({ chrome });
+  const doc = fakeDoc();
+  const { loop, events } = wire(doc, chrome);
+  doc.state.trackId = "def456";
+  const event = await loop.handleEligible(
+    { id: "abc123", uri: "spotify:track:abc123", title: "Long Song", artist: "Test Artist" },
+    0,
+  );
+  assert.equal(event.kind, "fail");
+  assert.equal(event.detail, "save:track-changed");
+  assert.deepEqual(events.map((e) => e.kind), ["fail"]);
+});
+
 test("a thrown save records save-threw", async () => {
   clock.now = 0;
   const chrome = stubChrome();

@@ -335,13 +335,9 @@ function readPlayback(doc, wallMs) {
 // Identity-only read behind the Like guard. It follows readPlayback's ad and
 // track path, so a stale anchor during an ad swap cannot authorize a click.
 function readCurrentTrackId(doc) {
-  try {
-    if (hasVisibleAd(doc)) return null;
-    const track = readTrack(doc);
-    return track ? track.id : null;
-  } catch (e) {
-    return null;
-  }
+  if (hasVisibleAd(doc)) return null;
+  const track = readTrack(doc);
+  return track ? track.id : null;
 }
 
 function readLikeHint(doc) {
