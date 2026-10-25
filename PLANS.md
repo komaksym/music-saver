@@ -79,6 +79,28 @@ must fail the live job, never produce a green skip.
 
 - None. All questions Q1-Q11 answered; any new fork gets a new ADR.
 
+## PR #10 reconciliation
+
+### Summary
+
+Merge current `main` (`b0cbc20`) into the ad-tolerance branch without rebasing.
+Keep main's shared PR gate, live E2E workflow and fixtures, Cubic advisory config,
+Dependabot, security tests, and manifest tests. Retire the branch's superseded local
+gate workflows, scripts, and tests. Preserve ad detection, stable track identity,
+sampler reset for ads and unreadable samples, and the branch regression coverage.
+
+### Milestones
+
+1. Merge `origin/main` and resolve source, test, docs, and workflow conflicts by intent.
+2. Keep main's `pr.yml`, `spotify-e2e.yml`, Dependabot, and E2E fixtures; remove the
+   branch-only gate automation that main replaced.
+3. Adapt conflict tests to the merged sample shape and add behavior-level coverage only
+   where the merge exposes a gap.
+4. Run `npm ci`, lint, `verify`, `actionlint`, and `zizmor`; review the final diff with
+   deslop and no-comments.
+5. Commit the merge and report the local SHA, diff versus main, preserved behavior, and
+   proof log paths. Leave remote changes to the parent.
+
 ## E2E session pickup
 
 ### Summary
