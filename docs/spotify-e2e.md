@@ -29,7 +29,10 @@ and unliked states with reached and unreached settings. It verifies real progres
 Liked Songs state, the background log, and an empty retry queue. A separate fifth case
 clicks the real Undo toast immediately after a save. It checks removal and both log entries.
 It does not open Spotify's playlist menu before clicking Undo.
-The runner matches the playing title and artist against the requested track page.
+The runner requires the now-playing widget to expose a string track ID, title, artist,
+and album link equal to the requested track. A missing track ID fails closed. It checks
+that exact identity before and after every Liked-state mutation and around restoration,
+so cleanup can only change the dedicated test song.
 The player and options use separate tabs in one browser profile. Settings changes
 reset the real tracker while playback is paused. Each case starts playback explicitly
 and verifies that options access preserves the same player document. The reached case uses
@@ -37,11 +40,23 @@ a six-second floor and a one-percent ratio to bound CI time. It does not verify 
 default 60-second floor through live playback. The fixture covers independent ratio
 and floor limits. Existing eligibility unit tests cover the default settings.
 
-The live runner restores the original liked state and extension settings on exit.
-It reloads the song to verify the liked state and reads the settings back after restoration.
+The live runner restores the original liked state and extension settings when it completes
+or catches an error. It reloads the song to verify the liked state and reads the settings
+back after restoration.
 A restored-state screenshot records successful cleanup. Failure results include safe
 phase and player diagnostics. Cookie values and general page content stay suppressed.
-A cleanup failure fails the check. A terminated runner cannot guarantee cleanup.
+A cleanup failure fails the check.
+
+SIGINT and SIGTERM receive best-effort cleanup. On the first signal the runner stops
+extension activity, pauses playback when possible, stops an active recording, and
+restores the original Like state and settings. It exits with 130 for SIGINT and 143 for
+SIGTERM. A second signal exits immediately. Cleanup steps share a 10-second deadline,
+and an overrun exits with status 1 and reports that cleanup was incomplete.
+The deadline can only fire when the event loop is free. The runner calls
+agent-browser synchronously, so a browser subprocess that hangs blocks signal handling
+and the deadline for up to that call's 60-second timeout; the 10-second bound does not
+preempt it. SIGKILL, a crashed host, or a lost browser cannot run cleanup, so the
+runner never guarantees restoration.
 Use a dedicated test account and a disposable song, never a personal account.
 Live tests cannot force Spotify to serve an advertisement. Ad cases use explicit
 visible fixture markers, including a stale song widget during an ad. Unknown future
