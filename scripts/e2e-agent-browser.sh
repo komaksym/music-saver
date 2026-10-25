@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Agent-browser E2E for music-saver. This is the one supported browser harness.
-# Never add Playwright, Puppeteer, Selenium, or Cypress; the guard
-# scripts/check-browser-stack.sh fails the build when they appear.
+# Manual agent-browser harness for music-saver. The canonical fixture and live
+# suites run through scripts/spotify-e2e.mjs. This script keeps the
+# dedicated-account login and cookie export flow plus a small browser smoke
+# check.
 set -euo pipefail
 # shellcheck source=scripts/e2e-harness.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/e2e-harness.sh"
@@ -47,21 +48,11 @@ cmd_cookies_export() {
   RAW_ACCOUNTS=""
   printf '%s\n' "exported $COOKIES_FILE"
 }
-cmd_cookies_restore() {
-  need agent-browser
-  need node
-  if [ ! -f "$COOKIES_FILE" ]; then
-    printf '%s\n' "no cookies at $COOKIES_FILE; run auth once first" >&2
-    exit 3
-  fi
-  mkdir -p "$PROFILE"
-  SESSION="$SESSION" PROFILE="$PROFILE" node "$ROOT/scripts/e2e-cookies.mjs" restore "$COOKIES_FILE"
-}
 cmd_smoke() {
   need agent-browser
   mkdir -p "$ART"
   ab open "https://example.com"
-  ab wait --text "documentation"
+  ab wait --text "Example Domain"
   ab snapshot -i | tee "$ART/smoke-snapshot.txt"
   ab screenshot "$ART/smoke.png"
   printf '%s\n' "smoke artifacts in $ART"
@@ -86,8 +77,7 @@ cmd_player() {
 case "${1:-smoke}" in
   auth) cmd_auth ;;
   cookies-export) cmd_cookies_export ;;
-  cookies-restore) cmd_cookies_restore ;;
   smoke) cmd_smoke ;;
   player) cmd_player ;;
-  *) printf '%s\n' "usage: auth, cookies-export, cookies-restore, smoke, or player" >&2; exit 2 ;;
+  *) printf '%s\n' "usage: auth, cookies-export, smoke, or player" >&2; exit 2 ;;
 esac

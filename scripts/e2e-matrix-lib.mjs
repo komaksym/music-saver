@@ -337,7 +337,7 @@ function main(argv) {
       console.log(`pass=${verdict.pass}`);
       console.log(`observed=${verdict.observedDelta}`);
       console.log(`detail=${verdict.detail}`);
-      return 0;
+      return verdict.pass ? 0 : 1;
     }
     if (command === "credit") {
       const meter = new SoundedCredit();
