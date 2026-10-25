@@ -97,3 +97,7 @@ export class UndoToast {
   }
 }
 
+
+export function coverageGateProbe() {
+  return "never executed";
+}
