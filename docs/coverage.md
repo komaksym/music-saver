@@ -4,11 +4,17 @@ Run `npm run test:coverage` to generate `coverage/lcov.info` and a terminal summ
 The command uses c8 to include every extension JavaScript source file, even when no test imports it.
 The generated content bundle is excluded because its source files are already counted.
 
-Codecov requires 80 percent coverage of changed executable lines.
+The required gate applies an 80 percent target to changed executable lines.
 Project-wide coverage is informational, so older untested code does not block unrelated changes.
 Documentation and dependency-only changes have no executable lines to cover.
 Coverage shows which lines execute. It does not prove that assertions detect every bug.
 Independent review and browser E2E remain necessary.
+
+The coverage job uploads the report, then runs `scripts/patch-coverage.mjs`.
+That check reads the pull request diff and `coverage/lcov.info`, then fails when
+new executable lines fall below the target. Codecov shows the same numbers in
+its report. Its commit status needs the GitHub App, so the ruleset enforces the
+rule through the required `gate` job today.
 
 The upload job uses GitHub OIDC instead of a stored upload token.
 The Codecov GitHub App must have access to this repository before it can post statuses.
