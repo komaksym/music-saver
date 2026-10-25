@@ -46,13 +46,37 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run test:coverage
+      - name: Upload coverage with GitHub identity
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        with:
+          use_oidc: true
+          files: coverage/lcov.info
+          disable_search: true
+          fail_ci_if_error: true
+
   gate:
     if: always()
-    needs: [checks, e2e]
+    needs: [checks, e2e, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
     steps:
-      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+      - if: needs.checks.result != 'success' || needs.e2e.result != 'success' || needs.coverage.result != 'success'
         run: exit 1
       - run: echo gate passed
