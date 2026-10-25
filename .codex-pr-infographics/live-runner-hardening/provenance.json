@@ -1,0 +1,9 @@
+{
+  "skill": "baoyu-infographic",
+  "backend": "codex-imagegen",
+  "image_sha256": "81df3d6d304be5b260237d89c91f5474a694028365d4e1a6f7aebcbf1a6d4cfc",
+  "prompt_sha256": "f50c04f24563d329a73e6c9a734c21c20d9942433b2b92d96832b97c8f627644",
+  "purpose": "PR 49 shows the live runner's identity gate for every Liked mutation and its bounded signal cleanup order.",
+  "visual_note": "Viewed the final PNG. Read 'Prove the song before you touch it', 'IDENTITY GATE', 'track ID', 'title', 'artist', 'album', 'EVERY MUTATION', 'SIGNAL CLEANUP', 'SIGINT 130', 'SIGTERM 143', '10 second bound', 'CLEANUP ORDER', '142 tests', and 'fails closed without an ID'.",
+  "created_at": "2026-10-25T15:56:03.467Z"
+}
