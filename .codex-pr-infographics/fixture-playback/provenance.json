@@ -1,0 +1,9 @@
+{
+  "skill": "baoyu-infographic",
+  "backend": "codex-imagegen",
+  "image_sha256": "4d7c5d86889ec006e7202cd13e144ee712452459ee05c14fea8fe5dcb5040795",
+  "prompt_sha256": "a074592b8773a187437e6420ca4e3e398397a045414aeb2f4edfe0b7fcca0766",
+  "purpose": "Fixture E2E checks must prove playback started and progress advanced.",
+  "visual_note": "Viewed A passing fixture must actually play, Fixture script ready, Playback state checked, and Progress greater than zero.",
+  "created_at": "2026-10-25T12:50:56.051998+00:00"
+}

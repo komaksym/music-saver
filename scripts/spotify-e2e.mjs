@@ -112,6 +112,7 @@ try {
       const trackId = scenario.id.replace(/-/g, '');
       open(`http://127.0.0.1:${address.port}/?id=${trackId}&liked=${scenario.liked}&fail=${scenario.mode === 'failure'}`);
       ab('wait', '#play');
+      ab('wait', '--fn', 'typeof window.fixture?.state === "function"');
       if (scenario.mode === 'ad-only') evaluate('fixture.ad(true)');
       if (scenario.mode === 'paused') {
         wait(6000); ab('click', '#play'); wait(1500);
@@ -132,6 +133,8 @@ try {
       }
       const state = evaluate('fixture.state()');
       screenshot(scenario.id);
+      assert.equal(state.playing, scenario.mode !== 'seek', `${scenario.id}: expected playback state`);
+      assert.ok(state.position > 0, `${scenario.id}: fixture playback advanced`);
       const observed = events();
       // A clear is not synchronous in the background's cached copy, and an event
       // created just before the previous navigation can land after it. Judge only
