@@ -1,0 +1,9 @@
+{
+  "skill": "baoyu-infographic",
+  "backend": "codex-imagegen",
+  "image_sha256": "b2f71404b88b53e348b017540398c25b37abf9f7af84ad398fcd41cece27902f",
+  "prompt_sha256": "12eeea9c36ef418e624eb20edcc240031b3bfc86e83dfdd8732488135f6091dd",
+  "purpose": "PR 48 compares the old cookie import with the new one that keeps host-only scope, domain scope, and SameSite policy.",
+  "visual_note": "Viewed the final PNG. Read 'Cookie import keeps its exact scope', 'BEFORE', 'AFTER', 'Host-only stays host-only', 'Domain cookie keeps .spotify.com', 'SameSite copied from the snapshot', 'None without Secure fails closed', '10 new tests', and '100% changed-line coverage'.",
+  "created_at": "2026-10-25T15:48:10.830Z"
+}
