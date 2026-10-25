@@ -1,5 +1,8 @@
-// Best-effort signal cleanup for the live Spotify runner. SIGKILL and host
-// failures cannot run handlers, so this module never promises full cleanup.
+// Best-effort signal cleanup for the live Spotify runner. The deadline is
+// checked on the event loop, so a synchronous agent-browser call that hangs
+// delays both signal handling and the deadline up to that call's own timeout.
+// SIGKILL and host failures cannot run handlers, so this module never promises
+// full cleanup.
 export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
 export const SIGNAL_EXIT_CODES = Object.freeze({ SIGINT: 130, SIGTERM: 143 });
 export const INCOMPLETE_CLEANUP_EXIT_CODE = 1;

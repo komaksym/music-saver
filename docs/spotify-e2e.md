@@ -47,13 +47,16 @@ A restored-state screenshot records successful cleanup. Failure results include 
 phase and player diagnostics. Cookie values and general page content stay suppressed.
 A cleanup failure fails the check.
 
-SIGINT and SIGTERM receive bounded best-effort cleanup. On the first signal the runner
-stops extension activity, pauses playback when possible, stops an active recording, and
+SIGINT and SIGTERM receive best-effort cleanup. On the first signal the runner stops
+extension activity, pauses playback when possible, stops an active recording, and
 restores the original Like state and settings. It exits with 130 for SIGINT and 143 for
-SIGTERM. The whole cleanup is bounded to 10 seconds. A hung browser call exits with
-status 1 and reports that cleanup was incomplete. A second signal exits immediately.
-SIGKILL, a crashed host, or a lost browser cannot run cleanup, so the runner never
-guarantees restoration.
+SIGTERM. A second signal exits immediately. Cleanup steps share a 10-second deadline,
+and an overrun exits with status 1 and reports that cleanup was incomplete.
+The deadline can only fire when the event loop is free. The runner calls
+agent-browser synchronously, so a browser subprocess that hangs blocks signal handling
+and the deadline for up to that call's 60-second timeout; the 10-second bound does not
+preempt it. SIGKILL, a crashed host, or a lost browser cannot run cleanup, so the
+runner never guarantees restoration.
 Use a dedicated test account and a disposable song, never a personal account.
 Live tests cannot force Spotify to serve an advertisement. Ad cases use explicit
 visible fixture markers, including a stale song widget during an ad. Unknown future
