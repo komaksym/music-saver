@@ -1,0 +1,9 @@
+{
+  "skill": "baoyu-infographic",
+  "backend": "codex-imagegen",
+  "image_sha256": "3962c8cde45da657ed6eb90a0849ce98f85dbb8dc32e07593a333126e9f6110e",
+  "prompt_sha256": "ec9c6a618ee6ae0f412da294c7777286f52703863dc7fba9699e941013f16c78",
+  "purpose": "Changed-line coverage flows from the pull request diff into Codecov reporting and the required gate decision.",
+  "visual_note": "Viewed final PNG. Read 'Pull request adds lines', 'Tests write lcov', 'Codecov reports', 'Compare added lines at 80%', 'Gate fails, Merge blocked', and 'Required gate job enforces the rule'.",
+  "created_at": "2026-10-25T13:51:40.137097+00:00"
+}
