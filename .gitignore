@@ -1,7 +1,8 @@
 .DS_Store
 *.zip
-.audit/
-.audit/
-tests/e2e-auth-state/
-tests/e2e-profile/
+node_modules/
 e2e-artifacts/
+tests/e2e-profile/
+tests/e2e-auth-state/
+.audit/
+.audit/

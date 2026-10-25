@@ -16,6 +16,12 @@ export class ActivityLog {
     if (!this.entries) this.entries = (await this.store.load()) ?? [];
   }
 
+  // A second context can clear or replace the durable log. Adopt that value so
+  // the next append cannot republish entries the other writer removed.
+  adopt(stored) {
+    if (Array.isArray(stored)) this.entries = stored.slice();
+  }
+
   static validate(event) {
     if (!event || typeof event !== "object") throw new Error("event must be an object");
     if (typeof event.ts !== "number" || !Number.isFinite(event.ts) || event.ts < 0) throw new Error("event needs a non-negative numeric ts");

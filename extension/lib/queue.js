@@ -26,6 +26,14 @@ export class RetryQueue {
     await this.store.save(this.items);
   }
 
+  // A second context can clear or replace the durable queue. Adopt that value so
+  // the next write cannot republish items the other writer removed.
+  adopt(stored) {
+    if (!Array.isArray(stored)) return;
+    this.items = stored.slice();
+    for (const item of this.items) this.seq = Math.max(this.seq, (item.seq ?? 0) + 1);
+  }
+
   static validate(item) {
     if (!item || typeof item.id !== "string" || item.id === "") throw new Error("item needs a non-empty string id");
     if (typeof item.uri !== "string" || !item.uri.startsWith("spotify:")) throw new Error("item needs a spotify: uri");

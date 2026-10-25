@@ -153,6 +153,10 @@ function rangeMs(range) {
 }
 
 export function readPlayback(doc, wallMs) {
+  for (const selector of ['[data-testid="ad-slot"]', '[data-testid="advertisement"]']) {
+    const ad = doc.querySelector(selector);
+    if (ad && ad.getClientRects().length > 0) return null;
+  }
   let playBtn = null;
   try {
     playBtn = doc.querySelector(SELECTORS.playPause);
@@ -221,11 +225,6 @@ export class SoundedTimeSampler {
     const progress = sample.positionMs - prev.positionMs;
     if (!(progress > 0)) return 0;
     const budget = Math.max(0, this.playingWallMs - this.creditedMs);
-    // A delayed progress update reports at most the playback that happened
-    // since the last credit, plus one poll tick of rounding slack. A larger
-    // jump is a forward seek: it establishes no listening, so credit only
-    // this tick's wall time instead of paying out every banked unchanged
-    // sample at once.
     const seek = progress > budget + wall;
     const delta = seek ? wall : Math.min(progress, budget);
     if (!(delta > 0)) return 0;

@@ -239,6 +239,10 @@ function rangeMs(range) {
 }
 
 function readPlayback(doc, wallMs) {
+  for (const selector of ['[data-testid="ad-slot"]', '[data-testid="advertisement"]']) {
+    const ad = doc.querySelector(selector);
+    if (ad && ad.getClientRects().length > 0) return null;
+  }
   let playBtn = null;
   try {
     playBtn = doc.querySelector(SELECTORS.playPause);
@@ -307,11 +311,6 @@ class SoundedTimeSampler {
     const progress = sample.positionMs - prev.positionMs;
     if (!(progress > 0)) return 0;
     const budget = Math.max(0, this.playingWallMs - this.creditedMs);
-    // A delayed progress update reports at most the playback that happened
-    // since the last credit, plus one poll tick of rounding slack. A larger
-    // jump is a forward seek: it establishes no listening, so credit only
-    // this tick's wall time instead of paying out every banked unchanged
-    // sample at once.
     const seek = progress > budget + wall;
     const delta = seek ? wall : Math.min(progress, budget);
     if (!(delta > 0)) return 0;
@@ -590,7 +589,7 @@ class UndoToast {
     try {
       if (el.style) {
         el.style.cssText =
-          "position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
+          "display:block!important;position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
           "background:#191414;color:#fff;padding:10px 14px;border-radius:8px;" +
           "font:14px system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4);";
       }
@@ -707,7 +706,10 @@ class WatchLoop {
     } catch (e) {
       return null;
     }
-    if (!sample || !sample.track || !(sample.durationMs > 0)) return null;
+    if (!sample || !sample.track || !(sample.durationMs > 0)) {
+      this.sampler.reset();
+      return null;
+    }
     if (sample.track.id !== this.lastPolledId) {
       this.lastPolledId = sample.track.id;
       this.lastRetryPollMs = now;
@@ -855,12 +857,25 @@ class WatchLoop {
   }
 }
 
+// The shipped manifest matches only Spotify, so the loop boots there. The E2E
+// runner patches a temp manifest to add loopback and serves the player fixture
+// from it, so that host must boot too.
+function shouldBoot(href) {
+  let url;
+  try {
+    url = new URL(String(href || ""));
+  } catch (e) {
+    return false;
+  }
+  if (url.hostname === "open.spotify.com") return true;
+  return url.protocol === "http:" && url.hostname === "127.0.0.1";
+}
+
 function liveBoot() {
   try {
     if (typeof document === "undefined") return;
     if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.sendMessage) return;
-    const href = String((typeof location !== "undefined" && location.href) || "");
-    if (!href.includes("open.spotify.com")) return;
+    if (!shouldBoot((typeof location !== "undefined" && location.href) || "")) return;
     const sendMessage = (msg) =>
       new Promise((resolve) => {
         try {

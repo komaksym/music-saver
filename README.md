@@ -18,9 +18,20 @@ Chromium extension that auto-saves Spotify tracks you listen through while you w
 
 ## Develop
 
-- `npm install` installs the lint tooling, and `npm run lint` checks the extension sources and scripts.
 - `npm test` runs the unit and integration suites.
 - `npm run build` regenerates `extension/content.bundle.js` (do not edit by hand).
 - `npm run verify` runs tests, build, and syntax checks.
+
+## Browser E2E
+
+The browser tests use agent-browser and load the unpacked extension on Linux with
+Xvfb. `node scripts/spotify-e2e.mjs fixture` tests a controlled player matrix.
+`node scripts/spotify-e2e.mjs live` tests actual Spotify playback with a
+dedicated authenticated profile. Fixture results do not prove live Spotify
+playback.
+
+See [Spotify E2E checks](docs/spotify-e2e.md) for coverage, authentication,
+artifacts, and the GitHub check names. Missing or expired authentication fails
+the live suite. Never use a personal Spotify account for these tests.
 
 The generic Spotify Web API client in `extension/lib/spotify.js` stays parked for a post-Premium future (see `docs/adr/0003-dom-first-no-premium.md`).

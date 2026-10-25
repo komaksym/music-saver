@@ -251,9 +251,6 @@ test("sampler credits quantized position jumps against accumulated playing time"
 });
 
 test("sampler caps forward-seek credit after unchanged samples", () => {
-  // A frozen progress bar banks playing wall time. A later seek must not pay
-  // that bank out at once: it establishes no listening, so the seek tick can
-  // credit at most its own wall gap.
   const s = new SoundedTimeSampler();
   const track = { id: "t" };
   assert.equal(s.observe({ track, playing: true, positionMs: 0, wallMs: 0 }), 0);
