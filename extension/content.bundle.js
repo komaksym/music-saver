@@ -332,6 +332,18 @@ function readPlayback(doc, wallMs) {
   return { kind: "ad", track: null, playing, wallMs, positionMs: 0, durationMs: 0 };
 }
 
+// Identity-only read behind the Like guard. It follows readPlayback's ad and
+// track path, so a stale anchor during an ad swap cannot authorize a click.
+function readCurrentTrackId(doc) {
+  try {
+    if (hasVisibleAd(doc)) return null;
+    const track = readTrack(doc);
+    return track ? track.id : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 function readLikeHint(doc) {
   const btn = findLikeControl(doc);
   if (!btn) return "unknown";
@@ -453,6 +465,9 @@ class LikeToggle {
     this.settleMs = (opts && opts.settleMs) || 150;
     this.contentTimeoutMs = (opts && opts.contentTimeoutMs) || 2500;
     this.contentPollMs = (opts && opts.contentPollMs) || 100;
+    this.currentTrackId = (opts && typeof opts.currentTrackId === "function")
+      ? opts.currentTrackId
+      : () => readCurrentTrackId(root);
   }
 
   sleep(ms) {
@@ -468,16 +483,35 @@ class LikeToggle {
     }
   }
 
-  async openMenu() {
+  // Fail-closed identity check. A missing reader, a null track, or a thrown
+  // read all report a track change, so no mutation can follow.
+  trackNow() {
+    try {
+      return this.currentTrackId();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  stillOn(trackId) {
+    return !!trackId && this.trackNow() === trackId;
+  }
+
+  async openMenu(trackId) {
     const btn = this.mainButton();
-    if (!btn) return null;
+    if (!btn || !this.stillOn(trackId)) return null;
     try {
       btn.click();
     } catch (e) {
       return null;
     }
     await this.sleep(this.settleMs);
-    return findMenu(this.root);
+    const menu = findMenu(this.root);
+    if (!this.stillOn(trackId)) {
+      clickCancel(menu);
+      return null;
+    }
+    return menu;
   }
 
   // Spotify fetches the playlist rows after the menu shell opens, so the
@@ -493,11 +527,19 @@ class LikeToggle {
     }
   }
 
-  async check() {
-    if (readLikeHint(this.root) === "unliked") return "unliked";
-    const menu = await this.openMenu();
-    if (!menu) return "unknown";
+  async check(trackId) {
+    const target = trackId || this.trackNow();
+    if (!this.stillOn(target)) return "track-changed";
+    if (readLikeHint(this.root) === "unliked") {
+      return this.stillOn(target) ? "unliked" : "track-changed";
+    }
+    const menu = await this.openMenu(target);
+    if (!menu) return this.stillOn(target) ? "unknown" : "track-changed";
     const box = await this.waitForLiked(menu);
+    if (!this.stillOn(target)) {
+      clickCancel(menu);
+      return "track-changed";
+    }
     const state = !box
       ? "unknown"
       : attrOf(box, "aria-checked") === "true"
@@ -507,26 +549,42 @@ class LikeToggle {
     return state;
   }
 
-  async save() {
-    const state = await this.check();
+  async save(trackId, opts) {
+    const target = trackId || this.trackNow();
+    const state = opts && typeof opts.state === "string"
+      ? opts.state
+      : await this.check(target);
+    if (state === "track-changed" || !this.stillOn(target)) {
+      return { ok: false, reason: "track-changed" };
+    }
     if (state === "liked") return { ok: true, action: "already-saved" };
     const btn = this.mainButton();
     if (!btn) return { ok: false, reason: "dom-changed" };
     if (attrOf(btn, "aria-checked") === "false") {
+      if (!this.stillOn(target)) return { ok: false, reason: "track-changed" };
       try {
         btn.click();
       } catch (e) {
         return { ok: false, reason: "dom-changed" };
       }
       await this.sleep(this.settleMs);
+      if (!this.stillOn(target)) return { ok: false, reason: "track-changed" };
       const flipped = this.mainButton();
       return attrOf(flipped, "aria-checked") === "true"
         ? { ok: true, action: "saved" }
         : { ok: false, reason: "confirm-mismatch" };
     }
-    const menu = await this.openMenu();
-    if (!menu) return { ok: false, reason: "menu-timeout" };
+    const menu = await this.openMenu(target);
+    if (!menu) {
+      return this.stillOn(target)
+        ? { ok: false, reason: "menu-timeout" }
+        : { ok: false, reason: "track-changed" };
+    }
     const box = await this.waitForLiked(menu);
+    if (!this.stillOn(target)) {
+      clickCancel(menu);
+      return { ok: false, reason: "track-changed" };
+    }
     if (!box) {
       clickCancel(menu);
       return { ok: false, reason: "menu-timeout" };
@@ -535,6 +593,10 @@ class LikeToggle {
       clickCancel(menu);
       return { ok: true, action: "already-saved" };
     }
+    if (!this.stillOn(target)) {
+      clickCancel(menu);
+      return { ok: false, reason: "track-changed" };
+    }
     try {
       box.click();
     } catch (e) {
@@ -542,10 +604,18 @@ class LikeToggle {
       return { ok: false, reason: "dom-changed" };
     }
     await this.sleep(this.settleMs);
+    if (!this.stillOn(target)) {
+      clickCancel(menu);
+      return { ok: false, reason: "track-changed" };
+    }
     const done = findDone(menu);
     if (!done || !done.click) {
       clickCancel(menu);
       return { ok: false, reason: "dom-changed" };
+    }
+    if (!this.stillOn(target)) {
+      clickCancel(menu);
+      return { ok: false, reason: "track-changed" };
     }
     try {
       done.click();
@@ -553,26 +623,35 @@ class LikeToggle {
       return { ok: false, reason: "dom-changed" };
     }
     await this.sleep(this.settleMs);
+    if (!this.stillOn(target)) return { ok: false, reason: "track-changed" };
     return { ok: true, action: "saved" };
   }
 
-  async remove() {
+  async remove(trackId) {
+    const target = trackId || this.trackNow();
+    if (!this.stillOn(target)) return { ok: false, reason: "track-changed" };
     const btn = this.mainButton();
     if (!btn) return { ok: false, reason: "dom-changed" };
     if (attrOf(btn, "aria-checked") === "false") return { ok: true, action: "removed" };
-    const menu = await this.openMenu();
+    const menu = await this.openMenu(target);
     if (!menu) {
+      if (!this.stillOn(target)) return { ok: false, reason: "track-changed" };
       try {
         btn.click();
       } catch (e) {
         return { ok: false, reason: "dom-changed" };
       }
       await this.sleep(this.settleMs);
+      if (!this.stillOn(target)) return { ok: false, reason: "track-changed" };
       return attrOf(this.mainButton(), "aria-checked") === "false"
         ? { ok: true, action: "removed" }
         : { ok: false, reason: "confirm-mismatch" };
     }
     const box = await this.waitForLiked(menu);
+    if (!this.stillOn(target)) {
+      clickCancel(menu);
+      return { ok: false, reason: "track-changed" };
+    }
     if (!box) {
       clickCancel(menu);
       return { ok: false, reason: "menu-timeout" };
@@ -581,6 +660,10 @@ class LikeToggle {
       clickCancel(menu);
       return { ok: true, action: "removed" };
     }
+    if (!this.stillOn(target)) {
+      clickCancel(menu);
+      return { ok: false, reason: "track-changed" };
+    }
     try {
       box.click();
     } catch (e) {
@@ -588,10 +671,18 @@ class LikeToggle {
       return { ok: false, reason: "dom-changed" };
     }
     await this.sleep(this.settleMs);
+    if (!this.stillOn(target)) {
+      clickCancel(menu);
+      return { ok: false, reason: "track-changed" };
+    }
     const done = findDone(menu);
     if (!done || !done.click) {
       clickCancel(menu);
       return { ok: false, reason: "dom-changed" };
+    }
+    if (!this.stillOn(target)) {
+      clickCancel(menu);
+      return { ok: false, reason: "track-changed" };
     }
     try {
       done.click();
@@ -599,6 +690,7 @@ class LikeToggle {
       return { ok: false, reason: "dom-changed" };
     }
     await this.sleep(this.settleMs);
+    if (!this.stillOn(target)) return { ok: false, reason: "track-changed" };
     return { ok: true, action: "removed" };
   }
 }
@@ -742,7 +834,10 @@ class WatchLoop {
     return new WatchLoop({
       read: (wall) => readPlayback(doc, wall),
       sampler: new SoundedTimeSampler(),
-      likes: new LikeToggle(doc, { settleMs: 200 }),
+      likes: new LikeToggle(doc, {
+        settleMs: 200,
+        currentTrackId: () => readCurrentTrackId(doc),
+      }),
       toast: new UndoToast(doc),
       tracker: new EligibilityTracker(settings),
       report: (event) => opts.sendMessage({ type: "ms-event", event }),
@@ -796,20 +891,29 @@ class WatchLoop {
   }
 
   async handleEligible(track, now) {
+    if (!this.sameTrack(track, now)) {
+      return this.fail(track, now, "save", "track-changed");
+    }
     let state = "unknown";
     try {
-      state = await this.likes.check();
+      state = await this.likes.check(track.id);
     } catch (e) {
-      return this.fail(track, now, "save", "check-threw");
+      return this.fail(track, now, "save", this.sameTrack(track, now) ? "check-threw" : "track-changed");
+    }
+    if (!this.sameTrack(track, now) || state === "track-changed") {
+      return this.fail(track, now, "save", "track-changed");
     }
     if (state === "liked") {
       return this.emit({ kind: "skip", track, now, detail: "already-liked" });
     }
     let out = null;
     try {
-      out = await this.likes.save();
+      out = await this.likes.save(track.id, { state });
     } catch (e) {
-      return this.fail(track, now, "save", "save-threw");
+      return this.fail(track, now, "save", this.sameTrack(track, now) ? "save-threw" : "track-changed");
+    }
+    if (!this.sameTrack(track, now)) {
+      return this.fail(track, now, "save", "track-changed");
     }
     if (!out || !out.ok) {
       return this.fail(track, now, "save", (out && out.reason) || "save-failed");
@@ -830,21 +934,17 @@ class WatchLoop {
 
   async undo(track) {
     const now = this.nowMs();
-    let current = null;
-    try {
-      current = this.read(now);
-    } catch (e) {
-      current = null;
-    }
-    const currentId = current && current.track ? current.track.id : null;
-    if (currentId !== track.id) {
+    if (!this.sameTrack(track, now)) {
       return this.fail(track, now, "remove", "track-changed");
     }
     let out = null;
     try {
-      out = await this.likes.remove();
+      out = await this.likes.remove(track.id);
     } catch (e) {
-      return this.fail(track, now, "remove", "remove-threw");
+      return this.fail(track, now, "remove", this.sameTrack(track, now) ? "remove-threw" : "track-changed");
+    }
+    if (!this.sameTrack(track, now)) {
+      return this.fail(track, now, "remove", "track-changed");
     }
     if (out && out.ok) {
       return this.emit({ kind: "undo", track, now, detail: "" });
@@ -887,7 +987,9 @@ class WatchLoop {
     for (const intent of due) {
       let out = null;
       try {
-        out = intent.kind === "remove" ? await this.likes.remove() : await this.likes.save();
+        out = intent.kind === "remove"
+          ? await this.likes.remove(track.id)
+          : await this.likes.save(track.id);
       } catch (e) {
         out = null;
       }
@@ -897,6 +999,19 @@ class WatchLoop {
         // The intent stays queued; the next poll retries it.
       }
     }
+  }
+
+  currentId(now) {
+    try {
+      const sample = this.read(now);
+      return sample && sample.track ? sample.track.id : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  sameTrack(track, now) {
+    return this.currentId(now) === track.id;
   }
 
   start() {

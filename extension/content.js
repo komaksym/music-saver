@@ -5,7 +5,7 @@
 // reported events. Testable with injected deps; the live wiring at the
 // bottom runs solely on open.spotify.com inside the extension.
 import { EligibilityTracker } from "./lib/eligibility.js";
-import { readPlayback, SoundedTimeSampler, LikeToggle } from "./lib/player-dom.js";
+import { readPlayback, readCurrentTrackId, SoundedTimeSampler, LikeToggle } from "./lib/player-dom.js";
 import { UndoToast } from "./lib/toast.js";
 import { normalizeSettings } from "./lib/settings.js";
 
@@ -37,7 +37,10 @@ export class WatchLoop {
     return new WatchLoop({
       read: (wall) => readPlayback(doc, wall),
       sampler: new SoundedTimeSampler(),
-      likes: new LikeToggle(doc, { settleMs: 200 }),
+      likes: new LikeToggle(doc, {
+        settleMs: 200,
+        currentTrackId: () => readCurrentTrackId(doc),
+      }),
       toast: new UndoToast(doc),
       tracker: new EligibilityTracker(settings),
       report: (event) => opts.sendMessage({ type: "ms-event", event }),
@@ -91,20 +94,29 @@ export class WatchLoop {
   }
 
   async handleEligible(track, now) {
+    if (!this.sameTrack(track, now)) {
+      return this.fail(track, now, "save", "track-changed");
+    }
     let state = "unknown";
     try {
-      state = await this.likes.check();
+      state = await this.likes.check(track.id);
     } catch (e) {
-      return this.fail(track, now, "save", "check-threw");
+      return this.fail(track, now, "save", this.sameTrack(track, now) ? "check-threw" : "track-changed");
+    }
+    if (!this.sameTrack(track, now) || state === "track-changed") {
+      return this.fail(track, now, "save", "track-changed");
     }
     if (state === "liked") {
       return this.emit({ kind: "skip", track, now, detail: "already-liked" });
     }
     let out = null;
     try {
-      out = await this.likes.save();
+      out = await this.likes.save(track.id, { state });
     } catch (e) {
-      return this.fail(track, now, "save", "save-threw");
+      return this.fail(track, now, "save", this.sameTrack(track, now) ? "save-threw" : "track-changed");
+    }
+    if (!this.sameTrack(track, now)) {
+      return this.fail(track, now, "save", "track-changed");
     }
     if (!out || !out.ok) {
       return this.fail(track, now, "save", (out && out.reason) || "save-failed");
@@ -125,21 +137,17 @@ export class WatchLoop {
 
   async undo(track) {
     const now = this.nowMs();
-    let current = null;
-    try {
-      current = this.read(now);
-    } catch (e) {
-      current = null;
-    }
-    const currentId = current && current.track ? current.track.id : null;
-    if (currentId !== track.id) {
+    if (!this.sameTrack(track, now)) {
       return this.fail(track, now, "remove", "track-changed");
     }
     let out = null;
     try {
-      out = await this.likes.remove();
+      out = await this.likes.remove(track.id);
     } catch (e) {
-      return this.fail(track, now, "remove", "remove-threw");
+      return this.fail(track, now, "remove", this.sameTrack(track, now) ? "remove-threw" : "track-changed");
+    }
+    if (!this.sameTrack(track, now)) {
+      return this.fail(track, now, "remove", "track-changed");
     }
     if (out && out.ok) {
       return this.emit({ kind: "undo", track, now, detail: "" });
@@ -182,7 +190,9 @@ export class WatchLoop {
     for (const intent of due) {
       let out = null;
       try {
-        out = intent.kind === "remove" ? await this.likes.remove() : await this.likes.save();
+        out = intent.kind === "remove"
+          ? await this.likes.remove(track.id)
+          : await this.likes.save(track.id);
       } catch (e) {
         out = null;
       }
@@ -192,6 +202,19 @@ export class WatchLoop {
         // The intent stays queued; the next poll retries it.
       }
     }
+  }
+
+  currentId(now) {
+    try {
+      const sample = this.read(now);
+      return sample && sample.track ? sample.track.id : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  sameTrack(track, now) {
+    return this.currentId(now) === track.id;
   }
 
   start() {
