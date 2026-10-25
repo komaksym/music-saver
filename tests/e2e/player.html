@@ -1,0 +1,66 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>music-saver deterministic player</title>
+<style>body{font:20px system-ui;background:#121212;color:#eee;padding:40px}button{font:inherit;padding:12px;margin:8px}input{width:70%}#status{color:#1ed760}</style>
+<style>body>div:not([data-testid="now-playing-widget"]):not([data-testid="playback-progressbar"]):not([data-testid="context-menu"]):not([data-testid="advertisement"]){display:none!important}</style>
+<h1>music-saver player fixture</h1>
+<p>This is controlled browser coverage, not live Spotify.</p>
+<div data-testid="now-playing-widget">
+  <a data-testid="context-item-info-title">E2E song</a>
+  <span data-testid="context-item-info-artist">Test artist</span>
+  <a data-testid="context-link" data-context-item-type="track" href="spotify:track:fixture">Track identity</a>
+  <button id="like" aria-checked="false">Save song</button>
+</div>
+<button id="play" data-testid="control-button-playpause" aria-label="Play">Play</button>
+<div data-testid="playback-progressbar"><input type="range" min="0" max="10000" value="0"></div>
+<div data-testid="advertisement" hidden>Advertisement</div>
+<p id="status">Ready</p>
+<script>
+const params = new URLSearchParams(location.search);
+let liked = params.get('liked') === 'true';
+let pending = liked;
+let playing = false;
+let position = 0;
+let last = performance.now();
+let clicks = 0;
+let fail = params.get('fail') === 'true';
+const like = document.querySelector('#like');
+const play = document.querySelector('#play');
+const range = document.querySelector('input');
+const anchor = document.querySelector('[data-context-item-type]');
+anchor.href = 'spotify:track:' + params.get('id');
+function render() {
+  like.setAttribute('aria-checked', String(liked));
+  play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+  range.value = position;
+  document.querySelector('#status').textContent = `Liked: ${liked}. Save actions: ${clicks}. Position: ${Math.round(position)} ms.`;
+}
+like.onclick = () => {
+  clicks++;
+  if (fail) return;
+  if (!liked) { liked = true; render(); return; }
+  pending = liked;
+  const menu = document.createElement('div');
+  menu.dataset.testid = 'context-menu';
+  menu.innerHTML = '<button role="menuitemcheckbox" aria-checked="true"><span aria-labelledby="listrow-title-spotify:collection:tracks">Liked Songs</span></button><button type="submit">Done</button><button type="button">Cancel</button>';
+  const box = menu.querySelector('[role]');
+  box.onclick = () => { pending = !pending; box.setAttribute('aria-checked', String(pending)); };
+  menu.querySelector('[type=submit]').onclick = () => { liked = pending; menu.remove(); render(); };
+  menu.querySelector('[type=button]').onclick = () => menu.remove();
+  document.body.append(menu);
+};
+play.onclick = () => { playing = !playing; render(); };
+window.fixture = {
+  state: () => ({liked, clicks, playing, position}),
+  seek: (ms) => { position = ms; render(); },
+  ad: (active) => { document.querySelector('[data-testid=advertisement]').hidden = !active; },
+  recover: () => { fail = false; },
+};
+setInterval(() => {
+  const now = performance.now();
+  if (playing) position += now - last;
+  last = now;
+  render();
+}, 100);
+render();
+</script>

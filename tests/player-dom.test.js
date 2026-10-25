@@ -328,6 +328,22 @@ test("sampler ignores pauses and seeks", () => {
   assert.equal(s.observe({ kind: "track", track, playing: true, positionMs: 1000, durationMs: 200000, wallMs: 33000 }), 0);
 });
 
+test("sampler credits quantized position jumps against accumulated playing time", () => {
+  // Spotify refreshes the progress bar in multi-second steps in background
+  // tabs while the watch loop polls every second. Each jump must credit in
+  // full: the audio played through the whole gap, not just the last second.
+  const s = new SoundedTimeSampler();
+  const track = { id: "t" };
+  let total = 0;
+  let pos = 0;
+  total += s.observe({ kind: "track", track, playing: true, positionMs: 0, durationMs: 200000, wallMs: 0 });
+  for (let t = 1; t <= 15; t++) {
+    if (t % 5 === 0) pos += 5000;
+    total += s.observe({ kind: "track", track, playing: true, positionMs: pos, durationMs: 200000, wallMs: t * 1000 });
+  }
+  assert.equal(total, 15000);
+});
+
 test("sampler resets on track switch and unreadable samples", () => {
   const s = new SoundedTimeSampler();
   s.observe({ kind: "track", track: { id: "a" }, playing: true, positionMs: 9000, durationMs: 200000, wallMs: 0 });

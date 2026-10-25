@@ -44,7 +44,7 @@ export class UndoToast {
     try {
       if (el.style) {
         el.style.cssText =
-          "position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
+          "display:block!important;position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
           "background:#191414;color:#fff;padding:10px 14px;border-radius:8px;" +
           "font:14px system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4);";
       }

@@ -195,6 +195,23 @@ function findPlayButton(doc) {
   }
 }
 
+function hasVisibleAd(doc) {
+  for (const selector of ['[data-testid="ad-slot"]', '[data-testid="advertisement"]']) {
+    let ad = null;
+    try {
+      ad = doc.querySelector(selector);
+    } catch (e) {
+      continue;
+    }
+    try {
+      if (ad && ad.getClientRects().length > 0) return true;
+    } catch (e) {
+      continue;
+    }
+  }
+  return false;
+}
+
 // The now-playing bar carries data-testadtype="ad-type-none" for a track and
 // "ad-type-ad" while an ad plays. The ad bar swap also renders the v2 widget.
 // Use either signal so a stale track anchor can never resurrect an ad segment.
@@ -225,6 +242,7 @@ export function readAdType(doc) {
 // reads as an ad (no player at all returns null). Ads reset the sampler,
 // so they never add to a track's sounded-time budget.
 export function readPlayback(doc, wallMs) {
+  if (hasVisibleAd(doc)) return null;
   const playBtn = findPlayButton(doc);
   const playing = attrOf(playBtn, "aria-label") === "Pause";
   if (readAdType(doc)) {
@@ -248,12 +266,18 @@ export function readLikeHint(doc) {
 export class SoundedTimeSampler {
   constructor() {
     this.prev = null;
-    this.anchor = null;
+    // Playing-side wall clock and credited total implement the sounded-time
+    // budget: progress credits against accumulated playing time, not against
+    // a single tick gap. Spotify refreshes the progress bar in multi-second
+    // steps in background tabs, so per-tick clipping structurally undercounts.
+    this.playingWallMs = 0;
+    this.creditedMs = 0;
   }
 
   reset() {
     this.prev = null;
-    this.anchor = null;
+    this.playingWallMs = 0;
+    this.creditedMs = 0;
   }
 
   observe(sample) {
@@ -264,30 +288,20 @@ export class SoundedTimeSampler {
     const prev = this.prev;
     this.prev = sample;
     if (!prev || !prev.track || prev.track.id !== sample.track.id) {
-      this.anchor = sample;
+      this.playingWallMs = 0;
+      this.creditedMs = 0;
       return 0;
     }
-    if (!prev.playing || !sample.playing) {
-      this.anchor = sample.playing ? sample : null;
-      return 0;
-    }
-    const anchor = this.anchor;
-    if (!anchor) {
-      this.anchor = sample;
-      return 0;
-    }
-    const progress = sample.positionMs - anchor.positionMs;
-    if (!(progress > 0)) {
-      // The live progress bar advances in five-second steps while the watcher
-      // polls every second. Keep the last changed position so the next step
-      // credits the whole span. A backward seek starts a new anchor.
-      if (progress < 0) this.anchor = sample;
-      return 0;
-    }
-    const wall = sample.wallMs - anchor.wallMs;
-    this.anchor = sample;
+    if (!prev.playing || !sample.playing) return 0;
+    const wall = sample.wallMs - prev.wallMs;
     if (!(wall > 0)) return 0;
-    return Math.min(progress, wall);
+    this.playingWallMs += wall;
+    const progress = sample.positionMs - prev.positionMs;
+    if (!(progress > 0)) return 0;
+    const delta = Math.min(progress, Math.max(0, this.playingWallMs - this.creditedMs));
+    if (!(delta > 0)) return 0;
+    this.creditedMs += delta;
+    return delta;
   }
 }
 

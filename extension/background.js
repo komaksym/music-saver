@@ -108,10 +108,15 @@ export async function boot(env) {
     const onChanged = env.chrome.storage && env.chrome.storage.onChanged;
     if (onChanged && onChanged.addListener) {
       onChanged.addListener((changes) => {
-        if (changes && changes.settings) {
+        if (!changes) return;
+        if (changes.settings) {
           state.settings = normalizeSettings(changes.settings.newValue);
           state.tracker = new EligibilityTracker(state.settings);
         }
+        const activity = changes["activity-log"];
+        if (activity) state.log.adopt(Object.hasOwn(activity, "newValue") ? activity.newValue : []);
+        const queue = changes["retry-queue"];
+        if (queue) state.queue.adopt(Object.hasOwn(queue, "newValue") ? queue.newValue : []);
       });
     }
   } catch (e) {
