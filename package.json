@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "agent-browser": "0.38.2",
+    "agent-browser": "0.39.1",
     "c8": "^12.0.0",
     "eslint": "^10.13.0"
   }

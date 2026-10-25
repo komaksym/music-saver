@@ -80,7 +80,7 @@ test('live songs require explicit Spotify track identities', () => {
 test('an advertisement resets the sampling boundary before music resumes', async () => {
   const sampler = new SoundedTimeSampler();
   const track = { id: 'song' };
-  const sample = (wallMs, positionMs) => ({ track, wallMs, positionMs, durationMs: 100000, playing: true });
+  const sample = (wallMs, positionMs) => ({ kind: 'track', track, wallMs, positionMs, durationMs: 100000, playing: true });
   sampler.observe(sample(0, 0));
   sampler.observe(sample(1000, 1000));
   const loop = new WatchLoop({ read: () => null, settings: { enabled: true }, sampler });
@@ -101,6 +101,22 @@ for (const marker of ['[data-testid="ad-slot"]', '[data-testid="advertisement"]'
 }
 
 test('missing ad markers do not discard valid time readings', () => {
-  const doc = { querySelector: (selector) => selector.includes('input') ? { value: 1000, max: 10000 } : null };
+  const title = { textContent: 'Song' };
+  const artist = { textContent: 'Artist' };
+  const anchor = { textContent: 'Song', getAttribute: (name) => name === 'href' ? 'spotify:track:abc' : null };
+  const widget = { querySelector: (selector) => {
+    if (selector.includes('info-title')) return title;
+    if (selector.includes('info-artist')) return artist;
+    if (selector.includes('context-link') || selector.includes('spotify:track')) return anchor;
+    return null;
+  } };
+  const like = { getAttribute: () => 'false' };
+  const doc = { querySelector: (selector) => {
+    if (selector.includes('now-playing-widget-v2')) return null;
+    if (selector.includes('now-playing-widget') && selector.includes('button')) return like;
+    if (selector.includes('now-playing-widget')) return widget;
+    if (selector.includes('playback-progressbar') && selector.includes('input')) return { value: 1000, max: 10000 };
+    return null;
+  } };
   assert.equal(readPlayback(doc, 1000).durationMs, 10000);
 });

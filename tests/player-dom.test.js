@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { WatchLoop } from "../extension/content.js";
 import {
   readTrack,
   readPlayback,
+  readAdType,
   readLikeHint,
   extractTrackId,
   parseTimeToMs,
-  slugify,
   SoundedTimeSampler,
   LikeToggle,
 } from "../extension/lib/player-dom.js";
@@ -55,6 +56,9 @@ function fakePlayer(opts) {
     durText: o.durText || "3:27",
     doneClicked: false,
     cancelClicked: false,
+    noLike: !!o.noLike,
+    adType: o.adType === undefined ? "ad-type-none" : o.adType,
+    adWidget: !!o.adWidget,
   };
 
   const mainBtn = button(state.checked, () => {
@@ -118,7 +122,7 @@ function fakePlayer(opts) {
   const titleNode = node({}, state.title);
   const artistNode = node({}, state.artist);
   const linkNode = node({ href: state.albumHref });
-  const anchorNode = node({ href: state.anchorHref });
+  const anchorNode = node({ href: state.anchorHref }, o.anchorText === undefined ? state.title : o.anchorText);
   const widgetAnchor = o.widgetAnchorHref ? node({ href: o.widgetAnchorHref }) : null;
   const playBtn = node({ "aria-label": state.playing ? "Pause" : "Play" });
   const range = { value: String(state.positionMs), max: String(state.durationMs) };
@@ -132,7 +136,7 @@ function fakePlayer(opts) {
       if (String(sel).includes("info-title")) return titleNode;
       if (String(sel).includes("info-artist")) return artistNode;
       if (String(sel).includes("item-link")) return linkNode;
-      if (String(sel).includes("button")) return mainBtn;
+      if (String(sel).includes("button")) return state.noLike ? null : mainBtn;
       return null;
     },
   };
@@ -140,9 +144,15 @@ function fakePlayer(opts) {
   const doc = {
     querySelector(sel) {
       const s = String(sel);
+      if (s.includes("data-testadtype")) return node({ "data-testadtype": state.adType });
+      if (s.includes("now-playing-widget-v2")) {
+        return state.adWidget ? node({ "aria-label": "Advertisement" }) : null;
+      }
       if (s.includes("context-menu")) return state.menuOpen ? menu : null;
-      if (s.includes("now-playing-widget") && s.includes("button")) return mainBtn;
-      if (s.includes("now-playing-widget")) return widget;
+      if (s.includes("now-playing-widget") && s.includes("button")) {
+        return state.noLike || state.adWidget ? null : mainBtn;
+      }
+      if (s.includes("now-playing-widget")) return state.adWidget ? null : widget;
       if (s.includes("control-button-playpause")) return playBtn;
       if (s.includes("playback-progressbar") && s.includes("input")) return state.useRange ? range : null;
       if (s.includes("playback-progressbar")) return bar;
@@ -154,7 +164,7 @@ function fakePlayer(opts) {
       if (s.includes("item-link")) return linkNode;
       if (s.includes("info-title")) return titleNode;
       if (s.includes("info-artist")) return artistNode;
-      if (s.includes("button[aria-checked]")) return mainBtn;
+      if (s.includes("button[aria-checked]")) return state.noLike ? null : mainBtn;
       return null;
     },
   };
@@ -172,14 +182,46 @@ test("readTrack resolves identity from the real track anchor", () => {
   });
 });
 
-test("readTrack falls back to a deterministic slug uri without an anchor", () => {
+test("readTrack refuses an ad-like segment without a track anchor", () => {
   const { doc } = fakePlayer({ anchorHref: null });
-  const track = readTrack(doc);
-  assert.ok(track.uri.startsWith("spotify:track:slug-"));
-  assert.equal(track.title, "Immune to Danger");
-  const again = readTrack(fakePlayer({ anchorHref: null }).doc);
-  assert.equal(track.uri, again.uri);
+  assert.equal(readTrack(doc), null);
 });
+
+for (const candidate of [
+  { name: "stale", href: "spotify:track:previousSong", title: "Previous song" },
+  { name: "invalid", href: "/album/album123", title: "Current song" },
+]) {
+  for (const location of ["sidebar", "document"]) {
+    test(`readTrack skips a ${candidate.name} sidebar anchor for a current ${location} anchor`, () => {
+      const current = node({ href: "spotify:track:currentSong" }, "Current song");
+      const rejected = node({ href: candidate.href }, candidate.title);
+      const widget = {
+        querySelector(selector) {
+          if (selector.includes("info-title")) return node({}, "Current song");
+          if (selector.includes("info-artist")) return node({}, "Current artist");
+          return null;
+        },
+      };
+      const sidebar = {
+        querySelector: () => rejected,
+        querySelectorAll: () => location === "sidebar" ? [rejected, current] : [rejected],
+      };
+      const doc = {
+        querySelector(selector) {
+          if (selector === '[data-testid="now-playing-widget"]') return widget;
+          if (selector === 'aside[aria-label="Now playing view"]') return sidebar;
+          return selector.startsWith("a[") && location === "document" ? current : null;
+        },
+      };
+      assert.deepEqual(readTrack(doc), {
+        id: "currentSong",
+        uri: "spotify:track:currentSong",
+        title: "Current song",
+        artist: "Current artist",
+      });
+    });
+  }
+}
 
 test("readTrack returns null when the widget or names are missing", () => {
   assert.equal(readTrack({ querySelector: () => null }), null);
@@ -189,6 +231,7 @@ test("readTrack returns null when the widget or names are missing", () => {
 test("readPlayback reports playing state and millisecond range values", () => {
   const { doc } = fakePlayer({ positionMs: 61000, durationMs: 207000 });
   const sample = readPlayback(doc, 5000);
+  assert.equal(sample.kind, "track");
   assert.equal(sample.playing, true);
   assert.equal(sample.positionMs, 61000);
   assert.equal(sample.durationMs, 207000);
@@ -198,8 +241,50 @@ test("readPlayback reports playing state and millisecond range values", () => {
 test("readPlayback falls back to MM:SS text without a range input", () => {
   const { doc } = fakePlayer({ useRange: false });
   const sample = readPlayback(doc, 0);
+  assert.equal(sample.kind, "track");
   assert.equal(sample.positionMs, 1000);
   assert.equal(sample.durationMs, 207000);
+});
+
+test("ad-like segments never credit time, queue work, or crash", async () => {
+  const { doc } = fakePlayer({ title: "Advertisement", artist: "Spotify", anchorHref: null, durationMs: 0, durText: "0:00" });
+  const ad = readPlayback(doc, 0);
+  assert.deepEqual(ad, { kind: "ad", track: null, playing: true, wallMs: 0, positionMs: 0, durationMs: 0 });
+
+  const sampler = new SoundedTimeSampler();
+  const track = { id: "t" };
+  assert.equal(sampler.observe({ kind: "track", track, playing: true, positionMs: 0, durationMs: 200000, wallMs: 0 }), 0);
+  assert.equal(sampler.observe({ kind: "track", track, playing: true, positionMs: 1000, durationMs: 200000, wallMs: 1000 }), 1000);
+  assert.equal(sampler.observe(ad), 0);
+  assert.equal(sampler.observe({ ...ad, wallMs: 2000 }), 0);
+  assert.equal(sampler.observe({ kind: "track", track, playing: true, positionMs: 2000, durationMs: 200000, wallMs: 3000 }), 0);
+
+  const { doc: staleDoc } = fakePlayer({ title: "Advertisement", anchorHref: "https://open.spotify.com/track/stale?uri=spotify:track:stale", anchorText: "Immune to Danger" });
+  assert.equal(readPlayback(staleDoc, 0).kind, "ad");
+
+  const { doc: noLikeDoc } = fakePlayer({ noLike: true, positionMs: 5000, durationMs: 200000 });
+  assert.equal(readPlayback(noLikeDoc, 0).kind, "ad");
+
+  const { doc: unidentifiedDoc } = fakePlayer({ anchorHref: null });
+  const messages = [];
+  const loop = WatchLoop.create({
+    doc: unidentifiedDoc,
+    settings: {},
+    sendMessage: async (message) => {
+      messages.push(message);
+      return null;
+    },
+    nowMs: () => 0,
+  });
+  assert.equal(await loop.tick(), null);
+  assert.deepEqual(messages, []);
+
+  const brokenDoc = {
+    querySelector() {
+      throw new Error("player DOM changed");
+    },
+  };
+  assert.equal(readPlayback(brokenDoc, 0), null);
 });
 
 test("readLikeHint reports unliked fast path and unknown otherwise", () => {
@@ -208,30 +293,75 @@ test("readLikeHint reports unliked fast path and unknown otherwise", () => {
   assert.equal(readLikeHint({ querySelector: () => null }), "unknown");
 });
 
-test("helpers parse ids, times, and slugs", () => {
+test("an ad marker wins over a stale track anchor and a live Like control", () => {
+  const { doc } = fakePlayer({
+    adType: "ad-type-ad",
+    anchorHref: "https://open.spotify.com/track/stale?uri=spotify:track:stale",
+    anchorText: "Immune to Danger",
+    positionMs: 90000,
+    durationMs: 207000,
+  });
+  assert.equal(readTrack(doc), null);
+  assert.equal(readPlayback(doc, 0).kind, "ad");
+});
+
+test("the live ad widget replaces the track widget", () => {
+  const { doc } = fakePlayer({
+    adType: "ad-type-ad",
+    adWidget: true,
+    title: "Advertisement",
+    artist: "Spotify",
+    anchorHref: null,
+    positionMs: 5000,
+    durationMs: 30000,
+    durText: "0:30",
+  });
+  assert.equal(readPlayback(doc, 0).kind, "ad");
+  assert.equal(readTrack(doc), null);
+});
+
+test("the ad widget wins when the bar still shows ad-type-none", () => {
+  const { doc } = fakePlayer({
+    adType: "ad-type-none",
+    adWidget: true,
+  });
+  assert.equal(readAdType(doc), "ad");
+  assert.equal(readPlayback(doc, 0).kind, "ad");
+});
+
+test("helpers parse ids and times", () => {
   assert.equal(extractTrackId("spotify:track:abc123"), "abc123");
   assert.equal(extractTrackId("x?uri=spotify%3Atrack%3Axyz"), "xyz");
   assert.equal(extractTrackId(null), null);
   assert.equal(parseTimeToMs("3:27"), 207000);
   assert.ok(Number.isNaN(parseTimeToMs("nope")));
-  assert.equal(slugify("/album/x::A B::C"), "album-x-a-b-c");
 });
 
 test("sampler credits sounded deltas bounded by wall time", () => {
   const s = new SoundedTimeSampler();
   const track = { id: "t" };
-  assert.equal(s.observe({ track, playing: true, positionMs: 1000, wallMs: 0 }), 0);
-  assert.equal(s.observe({ track, playing: true, positionMs: 2500, wallMs: 1000 }), 1000);
+  assert.equal(s.observe({ kind: "track", track, playing: true, positionMs: 1000, durationMs: 200000, wallMs: 0 }), 0);
+  assert.equal(s.observe({ kind: "track", track, playing: true, positionMs: 2500, durationMs: 200000, wallMs: 1000 }), 1000);
+});
+
+test("sampler credits every second when the live progress bar moves in five-second steps", () => {
+  const s = new SoundedTimeSampler();
+  const track = { id: "t" };
+  assert.equal(s.observe({ kind: "track", track, playing: true, positionMs: 0, durationMs: 200000, wallMs: 0 }), 0);
+  for (let t = 1; t < 5; t += 1) {
+    assert.equal(s.observe({ kind: "track", track, playing: true, positionMs: 0, durationMs: 200000, wallMs: t * 1000 }), 0);
+  }
+  assert.equal(s.observe({ kind: "track", track, playing: true, positionMs: 5000, durationMs: 200000, wallMs: 5000 }), 5000);
 });
 
 test("sampler ignores pauses and seeks", () => {
   const s = new SoundedTimeSampler();
   const track = { id: "t" };
-  s.observe({ track, playing: true, positionMs: 5000, wallMs: 0 });
-  assert.equal(s.observe({ track, playing: false, positionMs: 5000, wallMs: 30000 }), 0);
-  s.observe({ track, playing: true, positionMs: 5000, wallMs: 31000 });
-  assert.equal(s.observe({ track, playing: true, positionMs: 60000, wallMs: 32000 }), 1000);
-  assert.equal(s.observe({ track, playing: true, positionMs: 1000, wallMs: 33000 }), 0);
+  s.observe({ kind: "track", track, playing: true, positionMs: 5000, durationMs: 200000, wallMs: 0 });
+  assert.equal(s.observe({ kind: "track", track, playing: false, positionMs: 5000, durationMs: 200000, wallMs: 30000 }), 0);
+  s.observe({ kind: "track", track, playing: true, positionMs: 5000, durationMs: 200000, wallMs: 31000 });
+  assert.equal(s.observe({ kind: "track", track, playing: true, positionMs: 60000, durationMs: 200000, wallMs: 32000 }), 1000);
+  assert.equal(s.observe({ kind: "track", track, playing: true, positionMs: 1000, durationMs: 200000, wallMs: 33000 }), 0);
 });
 
 test("sampler credits quantized position jumps against accumulated playing time", () => {
@@ -242,18 +372,29 @@ test("sampler credits quantized position jumps against accumulated playing time"
   const track = { id: "t" };
   let total = 0;
   let pos = 0;
-  total += s.observe({ track, playing: true, positionMs: 0, wallMs: 0 });
+  total += s.observe({ kind: "track", track, playing: true, positionMs: 0, durationMs: 200000, wallMs: 0 });
   for (let t = 1; t <= 15; t++) {
     if (t % 5 === 0) pos += 5000;
-    total += s.observe({ track, playing: true, positionMs: pos, wallMs: t * 1000 });
+    total += s.observe({ kind: "track", track, playing: true, positionMs: pos, durationMs: 200000, wallMs: t * 1000 });
   }
   assert.equal(total, 15000);
 });
 
+test("sampler caps forward-seek credit after unchanged samples", () => {
+  const s = new SoundedTimeSampler();
+  const track = { id: "t" };
+  assert.equal(s.observe({ kind: "track", durationMs: 200000, track, playing: true, positionMs: 0, wallMs: 0 }), 0);
+  for (let t = 1; t <= 5; t++) {
+    assert.equal(s.observe({ kind: "track", durationMs: 200000, track, playing: true, positionMs: 0, wallMs: t * 1000 }), 0);
+  }
+  assert.equal(s.observe({ kind: "track", durationMs: 200000, track, playing: true, positionMs: 55000, wallMs: 6000 }), 1000);
+  assert.equal(s.observe({ kind: "track", durationMs: 200000, track, playing: true, positionMs: 56000, wallMs: 7000 }), 1000);
+});
+
 test("sampler resets on track switch and unreadable samples", () => {
   const s = new SoundedTimeSampler();
-  s.observe({ track: { id: "a" }, playing: true, positionMs: 9000, wallMs: 0 });
-  assert.equal(s.observe({ track: { id: "b" }, playing: true, positionMs: 9000, wallMs: 1000 }), 0);
+  s.observe({ kind: "track", track: { id: "a" }, playing: true, positionMs: 9000, durationMs: 200000, wallMs: 0 });
+  assert.equal(s.observe({ kind: "track", track: { id: "b" }, playing: true, positionMs: 9000, durationMs: 200000, wallMs: 1000 }), 0);
   assert.equal(s.observe(null), 0);
 });
 
