@@ -250,6 +250,17 @@ test("sampler credits quantized position jumps against accumulated playing time"
   assert.equal(total, 15000);
 });
 
+test("sampler caps forward-seek credit after unchanged samples", () => {
+  const s = new SoundedTimeSampler();
+  const track = { id: "t" };
+  assert.equal(s.observe({ track, playing: true, positionMs: 0, wallMs: 0 }), 0);
+  for (let t = 1; t <= 5; t++) {
+    assert.equal(s.observe({ track, playing: true, positionMs: 0, wallMs: t * 1000 }), 0);
+  }
+  assert.equal(s.observe({ track, playing: true, positionMs: 55000, wallMs: 6000 }), 1000);
+  assert.equal(s.observe({ track, playing: true, positionMs: 56000, wallMs: 7000 }), 1000);
+});
+
 test("sampler resets on track switch and unreadable samples", () => {
   const s = new SoundedTimeSampler();
   s.observe({ track: { id: "a" }, playing: true, positionMs: 9000, wallMs: 0 });
