@@ -13,8 +13,8 @@ Independent review and browser E2E remain necessary.
 The coverage job uploads the report, then runs `scripts/patch-coverage.mjs`.
 That check reads the pull request diff and `coverage/lcov.info`, then fails when
 new executable lines fall below the target. Codecov shows the same numbers in
-its report. Its commit status needs the GitHub App, so the ruleset enforces the
-rule through the required `gate` job today.
+its report. Its commit status needs the GitHub App. The ruleset now requires both
+`gate` and `codecov/patch`.
 
 The upload job uses GitHub OIDC instead of a stored upload token.
 The Codecov GitHub App must have access to this repository before it can post statuses.
