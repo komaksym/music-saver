@@ -705,6 +705,10 @@ class UndoToast {
 }
 
 
+function coverageGateProbe() {
+  return "never executed";
+}
+
 
 // ---- extension/content.js ----
 // Content-script watcher (M2/M4/M6). The edge owns the decide-and-act
