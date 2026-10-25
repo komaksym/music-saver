@@ -1,3 +1,3 @@
 export function coverageGateProbe() {
-  return "validation-only";
+  return "codecov-verified";
 }
