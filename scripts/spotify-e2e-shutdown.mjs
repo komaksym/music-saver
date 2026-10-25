@@ -49,7 +49,6 @@ export function installSignalShutdown({
     let timer;
     const deadline = new Promise((_, reject) => {
       timer = schedule(() => reject(new Error(`signal cleanup exceeded ${timeoutMs} ms`)), timeoutMs);
-      timer?.unref?.();
     });
     const cleanup = (async () => {
       for (const [label, step] of steps) {
