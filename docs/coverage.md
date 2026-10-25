@@ -13,15 +13,14 @@ Independent review and browser E2E remain necessary.
 The coverage job uploads the report, then runs `scripts/patch-coverage.mjs`.
 That check reads the pull request diff and `coverage/lcov.info`, then fails when
 new executable lines fall below the target. Codecov shows the same numbers in
-its report. Its commit status needs the GitHub App. The ruleset now requires both
-`gate` and `codecov/patch`.
+its own report and check. The ruleset requires both `gate` and `codecov/patch`.
 
 The upload job uses GitHub OIDC instead of a stored upload token.
 The Codecov GitHub App must have access to this repository before it can post statuses.
-Install it from [Codecov's GitHub App page](https://github.com/apps/codecov).
-Then confirm a real PR emits `codecov/patch` before adding that context to the default-branch ruleset.
-Keep the existing `gate` requirement and bind the coverage requirement to the app that emitted it.
-Never require a status that has not appeared; GitHub would leave every PR waiting for it.
+The app is installed for this repository. Its `codecov/patch` check is a check run
+from app 254, and the ruleset binds that context to the same app.
+If the app is ever removed, delete the requirement first; GitHub would otherwise
+leave every pull request waiting for a check that cannot appear.
 
 The coverage job runs on PRs and pushes to main, which gives Codecov a comparison baseline.
 Upload errors fail the job. Missing reports do not pass the patch policy.
