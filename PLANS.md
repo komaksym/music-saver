@@ -1,5 +1,20 @@
 # music-saver plans
 
+## Coverage gate
+
+### Summary
+
+Generate LCOV from the existing Node tests, including untested extension files.
+Upload coverage with GitHub OIDC and require 80 percent coverage on changed executable lines.
+Keep project-wide coverage informational while the older code gains tests.
+
+### Milestones
+
+1. Add the coverage command, Codecov policy, and upload job.
+2. Verify the report locally and run the PR checks and browser fixture matrix.
+3. Verify Codecov emits its patch status, merge the integration, then require that exact status in the ruleset.
+4. If GitHub App installation is missing, retain the implementation PR and report the external setup blocker.
+
 ## Summary
 
 Spotify-first Chromium extension that auto-saves tracks the user listens through while working. Design is fully locked: Liked Songs destination, sounded-time 90 percent plus 60s floor once per track ID, auto-save with Undo toast and local log, check-then-skip already-saved tracks, retry queue with backoff plus manual retry, settings with threshold 90 plus floor 60s plus enable-disable, Spotify web scope, public repo. Q11 answered NO Premium, so v1 drives the web player through a content script (ADR-0003) and the tested API client stays parked for a post-Premium future.

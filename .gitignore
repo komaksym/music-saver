@@ -1,6 +1,7 @@
 .DS_Store
 *.zip
 node_modules/
+coverage/
 e2e-artifacts/
 tests/e2e-profile/
 tests/e2e-auth-state/
